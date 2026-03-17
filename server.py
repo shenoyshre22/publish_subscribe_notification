@@ -157,24 +157,11 @@ def handle_client(conn, addr):
         except:
             break
 
-<<<<<<< HEAD
-    # FIX: remove client from all topics on disconnect
-    for topic in subscriptions:
-        if conn in subscriptions[topic]:
-            subscriptions[topic].remove(conn)
-
-    # remove username entry
-    if conn in usernames:
-        del usernames[conn]
-
-    # close connection if client disconnects
-=======
     # remove client from ALL topics on disconnect
     for topic in TOPICS:
         if conn in subscriptions[topic]:
             subscriptions[topic].remove(conn)
 
->>>>>>> eb72a323b66e9856ea9ebe3419390c1c99cc79a5
     conn.close()
     print("Disconnected:", addr)
 
