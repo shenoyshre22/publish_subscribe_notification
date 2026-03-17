@@ -37,12 +37,18 @@ def main():
         print("Could not connect to server. Is it running?")
         return
 
+    # NEW: username setup
+    username = input("Enter your username: ").strip()
+    if username:
+        sock.send(f"USER|{username}".encode())
+
     # start background thread to receive incoming broadcast messages
     thread = threading.Thread(target=receive_messages, args=(sock,), daemon=True)
     thread.start()
 
     print("\nCommands:")
     print("  sub   → subscribe to a topic")
+    print("  unsub → unsubscribe from a topic")
     print("  post  → post a message to a topic")
     print("  quit  → disconnect\n")
 
@@ -60,7 +66,12 @@ def main():
                 if topic in TOPICS:
                     sock.send(f"SUBSCRIBE|{topic}".encode())
                 else:
-                    print(f"Unknown topic '{topic}'. Type 'sub' again to see the list.")
+                    print(f"Unknown topic '{topic}'.")
+
+            elif command == "unsub":
+                show_topics()
+                topic = input("Enter topic name to unsubscribe: ").strip()
+                sock.send(f"UNSUBSCRIBE|{topic}".encode())
 
             elif command == "post":
                 show_topics()
@@ -68,6 +79,7 @@ def main():
                 if topic not in TOPICS:
                     print(f"Unknown topic '{topic}'.")
                     continue
+
                 message = input("Enter your message: ").strip()
                 if message:
                     sock.send(f"POST|{topic}|{message}".encode())
@@ -75,7 +87,7 @@ def main():
                     print("Empty message not sent.")
 
             else:
-                print("Unknown command. Use: sub, post, quit")
+                print("Unknown command. Use: sub, unsub, post, quit")
 
         except KeyboardInterrupt:
             print("\nDisconnecting...")

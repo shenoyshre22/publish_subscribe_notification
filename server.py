@@ -12,6 +12,9 @@ PORT = 5000
 # create a dictionary to store topic subscriptions
 subscriptions = {topic: [] for topic in TOPICS}
 
+# NEW: store usernames of clients
+usernames = {}
+
 
 # create a TCP socket
 server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -26,7 +29,6 @@ def broadcast(topic, message):
     
     #send a message to every client subscribed to a topic
    
-
     # get the list of subscribers for this topic
     for client in subscriptions[topic]:
         try:
@@ -45,6 +47,10 @@ def handle_client(conn, addr):
 
     print("Connected:", addr)
 
+    # NEW: default username
+    username = "Anonymous"
+    usernames[conn] = username
+
     while True:
         try:
             # receive data from the client
@@ -56,6 +62,7 @@ def handle_client(conn, addr):
 
             # split the command
             # format expected:
+            # USER|name
             # SUBSCRIBE|topic
             # POST|topic|message
             parts = data.split("|")
@@ -63,20 +70,48 @@ def handle_client(conn, addr):
             command = parts[0]
 
             # -------------------------
+            # handle USER command
+            # -------------------------
+            if command == "USER":
+
+                username = parts[1]
+                usernames[conn] = username
+
+                conn.send(f"Username set to {username}".encode())
+
+
+            # -------------------------
             # handle SUBSCRIBE command
             # -------------------------
-            if command == "SUBSCRIBE":
+            elif command == "SUBSCRIBE":
 
                 topic = parts[1]
 
                 # check if topic exists
                 if topic in TOPICS:
 
-                    # add client socket to the subscriber list
-                    subscriptions[topic].append(conn)
+                    # FIX: prevent duplicate subscriptions
+                    if conn not in subscriptions[topic]:
+                        subscriptions[topic].append(conn)
 
                     # confirmation message
                     conn.send(f"Subscribed to {topic}".encode())
+
+                else:
+                    conn.send("Invalid topic".encode())
+
+
+            # -------------------------
+            # handle UNSUBSCRIBE command
+            # -------------------------
+            elif command == "UNSUBSCRIBE":
+
+                topic = parts[1]
+
+                if topic in TOPICS and conn in subscriptions[topic]:
+                    subscriptions[topic].remove(conn)
+
+                conn.send(f"Unsubscribed from {topic}".encode())
 
 
             # -------------------------
@@ -87,14 +122,31 @@ def handle_client(conn, addr):
                 topic = parts[1]
                 message = parts[2]
 
+                # validate topic
+                if topic not in TOPICS:
+                    conn.send("Invalid topic".encode())
+                    continue
+
+                # get username of sender
+                username = usernames.get(conn, "Anonymous")
+
                 # format message for display
-                full_message = f"[{topic.upper()}] {message}"
+                full_message = f"[{topic.upper()}] {username}: {message}"
 
                 # send message to all subscribers
                 broadcast(topic, full_message)
 
         except:
             break
+
+    # FIX: remove client from all topics on disconnect
+    for topic in subscriptions:
+        if conn in subscriptions[topic]:
+            subscriptions[topic].remove(conn)
+
+    # remove username entry
+    if conn in usernames:
+        del usernames[conn]
 
     # close connection if client disconnects
     conn.close()
