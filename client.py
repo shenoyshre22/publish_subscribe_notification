@@ -26,6 +26,8 @@ def show_topics():
     for i, topic in enumerate(TOPICS, 1):
         print(f"  {i}. {topic}")
 
+        
+
 
 def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -51,6 +53,7 @@ def main():
     print("  unsub → unsubscribe from a topic")
     print("  post  → post a message to a topic")
     print("  quit  → disconnect\n")
+    print("  unsub → unsubscribe from a topic")
 
     while True:
         try:
@@ -85,6 +88,14 @@ def main():
                     sock.send(f"POST|{topic}|{message}".encode())
                 else:
                     print("Empty message not sent.")
+
+            elif command == "unsub":
+                show_topics()
+                topic = input("Enter topic name to unsubscribe: ").strip()
+                if topic in TOPICS:
+                    sock.send(f"UNSUBSCRIBE|{topic}".encode())
+                else:
+                    print(f"Unknown topic '{topic}'.")
 
             else:
                 print("Unknown command. Use: sub, unsub, post, quit")
