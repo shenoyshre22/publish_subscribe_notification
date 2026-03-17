@@ -93,10 +93,32 @@ def handle_client(conn, addr):
                 # send message to all subscribers
                 broadcast(topic, full_message)
 
+            # -------------------------
+            # handle UNSUBSCRIBE command
+            # -------------------------
+            elif command == "UNSUBSCRIBE":
+
+                topic = parts[1]
+
+             # check if topic exists and client is subscribed
+                if topic in TOPICS and conn in subscriptions[topic]:
+
+             # remove client from subscriber list
+                    subscriptions[topic].remove(conn)
+
+                    conn.send(f"Unsubscribed from {topic}".encode())
+
+            else:
+                    conn.send(f"You are not subscribed to {topic}".encode())
+
         except:
             break
 
-    # close connection if client disconnects
+    # remove client from ALL topics on disconnect
+    for topic in TOPICS:
+        if conn in subscriptions[topic]:
+            subscriptions[topic].remove(conn)
+
     conn.close()
     print("Disconnected:", addr)
 
