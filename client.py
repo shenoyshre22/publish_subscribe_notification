@@ -51,7 +51,7 @@ def main():
     print("  unsub → unsubscribe from a topic")
     print("  post  → post a message to a topic")
     print("  quit  → disconnect\n")
-
+   #removed dupe elif command
     while True:
         try:
             command = input("> ").strip().lower()
