@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NetThreads</title>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+
+  <!-- Socket.IO client — talks to our Flask-SocketIO server -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+  <!-- Our stylesheet -->
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════
+       HEADER — logo, username display, new post btn
+  ════════════════════════════════════════════════ -->
+  <header>
+
+    <!-- Logo -->
+    <div class="logo">
+      <div class="logo-icon">
+        <!-- simple waveform/network SVG logo -->
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="16" r="15" stroke="#e8414e" stroke-width="1.5"/>
+          <path d="M8 20 C10 12, 14 10, 16 16 C18 22, 22 20, 24 14"
+                stroke="#e8414e" stroke-width="2" stroke-linecap="round" fill="none"/>
+          <circle cx="8"  cy="20" r="2" fill="#e8414e"/>
+          <circle cx="24" cy="14" r="2" fill="#e8414e"/>
+        </svg>
+      </div>
+      Net<span>Threads</span>
+    </div>
+
+    <!-- Right side: connection dot + username + new post button -->
+    <div class="header-right">
+      <!-- green dot = connected, grey = disconnected -->
+      <div class="conn-dot" id="conn-dot"></div>
+
+      <!-- clicking this opens the username modal -->
+      <div class="username-display" id="username-display" onclick="openUsernameModal()">
+        @Anonymous
+      </div>
+
+      <button class="btn btn-primary" onclick="openPostModal()">
+        <!-- plus icon -->
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+          <path d="M6.5 1v11M1 6.5h11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        New Post
+      </button>
+    </div>
+
+  </header>
+
+
+  <!-- ═══════════════════════════════════════════════
+       MAIN LAYOUT — sidebar + feed
+  ════════════════════════════════════════════════ -->
+  <div class="main">
+
+    <!-- ── SIDEBAR ── -->
+    <aside>
+
+      <!-- My subscribed topics list -->
+      <div>
+        <div class="sidebar-section-title">My Threads</div>
+        <div class="my-topics-list" id="my-topics-list">
+          <!-- filled dynamically by app.js -->
+          <div class="empty-subs">Subscribe to topics<br/>to see them here</div>
+        </div>
+      </div>
+
+      <!-- Quick stats -->
+      <div>
+        <div class="sidebar-section-title">Stats</div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Posts received</div>
+            <div class="stat-value" id="stat-posts">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Subscriptions</div>
+            <div class="stat-value" id="stat-subs">0</div>
+          </div>
+        </div>
+      </div>
+
+    </aside>
+
+
+    <!-- ── FEED AREA ── -->
+    <div class="feed-area">
+
+      <!-- scrollable horizontal topic pills strip -->
+      <div class="topic-strip-wrap">
+        <div class="topic-strip-label">Topics For You</div>
+        <div class="topic-strip" id="topic-strip">
+          <!-- pills rendered by app.js -->
+        </div>
+      </div>
+
+      <!-- filter row: all vs my posts -->
+      <div class="feed-filter-row">
+        <span class="filter-label">Show:</span>
+        <button class="filter-btn active" onclick="setFilter('all', this)">All subscribed</button>
+        <button class="filter-btn"        onclick="setFilter('mine', this)">Posted by me</button>
+      </div>
+
+      <!-- the actual post cards appear here -->
+      <div class="posts-container" id="posts-container">
+        <!-- empty state shown until first post arrives -->
+        <div class="empty-feed" id="empty-feed">
+          <div class="big">📡</div>
+          <h3>Your feed is quiet</h3>
+          <p>Subscribe to topics above and posts will appear here in real time.</p>
+        </div>
+      </div>
+
+    </div><!-- end feed-area -->
+
+  </div><!-- end main -->
+
+
+  <!-- ═══════════════════════════════════════════════
+       USERNAME MODAL
+  ════════════════════════════════════════════════ -->
+  <div class="modal-overlay hidden" id="username-modal">
+    <div class="modal">
+      <h2>Set your username</h2>
+      <div class="modal-form">
+        <div class="form-group">
+          <label>Username</label>
+          <input class="form-input" id="username-input" type="text"
+                 placeholder="e.g. benny_d" maxlength="30"/>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost"    onclick="closeUsernameModal()">Cancel</button>
+          <button class="btn btn-primary"  onclick="saveUsername()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════
+       CREATE POST MODAL
+  ════════════════════════════════════════════════ -->
+  <div class="modal-overlay hidden" id="post-modal">
+    <div class="modal">
+      <h2>Create Post</h2>
+      <div class="modal-form">
+
+        <!-- topic dropdown — populated by app.js -->
+        <div class="form-group">
+          <label>Topic</label>
+          <select class="form-input" id="post-topic-select"></select>
+        </div>
+
+        <!-- message textarea -->
+        <div class="form-group">
+          <label>Message</label>
+          <textarea class="form-input" id="post-message"
+                    placeholder="What's happening?"></textarea>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-ghost"   onclick="closePostModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="submitPost()">Post</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════
+       SUBSCRIBE CONFIRM BAR (slides up from bottom)
+       shown when user clicks an unsubscribed topic pill
+  ════════════════════════════════════════════════ -->
+  <div class="sub-confirm hidden" id="sub-confirm">
+    <span id="sub-confirm-text"></span>
+    <button class="btn btn-primary"
+            style="padding:6px 14px;font-size:12px;"
+            onclick="confirmSubscribe()">Subscribe</button>
+    <button class="btn btn-ghost"
+            style="padding:6px 10px;font-size:12px;"
+            onclick="hideSubConfirm()">✕</button>
+  </div>
+
+
+  <!-- Our JavaScript logic -->
+  <script src="app.js"></script>
+
+</body>
+</html>
