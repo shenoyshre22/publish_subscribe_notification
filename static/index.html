@@ -567,7 +567,7 @@ function deletePost(post_id) {
 }
   // tell the server to broadcast the deletion to all other connected clients
   socket.emit("delete_post", { post_id });
-}
+
 
 // ── Subscribe / unsubscribe ───────────────────────────────────────────────────
 
