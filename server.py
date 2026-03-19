@@ -5,7 +5,7 @@ from topics import TOPICS     # import the list of allowed topics
 # Flask + SocketIO so the browser (index.html) can connect via WebSockets (to integrate frontend and backend in one server)
 from flask import Flask, send_from_directory
 from flask_socketio import SocketIO, emit, join_room, leave_room
-from flask_socketio import request as sio_request
+from flask import request as sio_request
 
 # RAW TCP SERVER (original — keeps client.py working)
 
