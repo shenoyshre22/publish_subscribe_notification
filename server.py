@@ -198,7 +198,7 @@ def run_tcp_server():
 
 
 # Flask serves the static files (index.html, style.css, app.js)
-app = Flask(__name__, static_folder=".", template_folder=".")
+app = Flask(__name__, static_folder="static", template_folder="static")
 app.config["SECRET_KEY"] = "netthreads_secret"
 
 # SocketIO replaces the raw TCP layer for browser clients
@@ -214,7 +214,7 @@ web_usernames = {}
 # serve index.html at the root URL
 @app.route("/")
 def index():
-    return send_from_directory(".", "index.html")
+    return send_from_directory("static", "index.html")
 
 
 # ── SocketIO event handlers (browser clients) ─────────────────────────────────
