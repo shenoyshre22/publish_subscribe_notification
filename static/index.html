@@ -142,6 +142,7 @@
     .posts-container::-webkit-scrollbar { width: 4px; }
     .posts-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+    /* ── POST CARD ── */
     .post-card {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: 12px; padding: 16px 18px;
@@ -150,6 +151,14 @@
     @keyframes slideIn {
       from { opacity: 0; transform: translateY(10px); }
       to   { opacity: 1; transform: translateY(0); }
+    }
+    /* fade-out animation when a post is deleted */
+    .post-card.deleting {
+      animation: fadeOut .25s ease forwards;
+    }
+    @keyframes fadeOut {
+      from { opacity: 1; transform: scale(1); }
+      to   { opacity: 0; transform: scale(0.97); }
     }
     .post-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
     .post-avatar {
@@ -165,6 +174,17 @@
       padding: 3px 9px; border-radius: 20px;
       letter-spacing: .5px; text-transform: uppercase;
     }
+
+    /* delete button — only shown on current user's own posts */
+    .post-delete-btn {
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); font-size: 18px; line-height: 1;
+      padding: 2px 6px; border-radius: 4px;
+      transition: color .15s, background .15s;
+      margin-left: 6px; flex-shrink: 0;
+    }
+    .post-delete-btn:hover { color: var(--accent); background: rgba(232,65,78,0.1); }
+
     .post-body { font-size: 14px; line-height: 1.6; padding-left: 38px; }
 
     .empty-feed { text-align: center; padding: 80px 20px; color: var(--muted); }
@@ -388,25 +408,29 @@ const getLabel = t => TOPIC_LABELS[t] || t;
 // ── App state ─────────────────────────────────────────────────────────────────
 let myUsername      = "Anonymous";
 let mySubscriptions = new Set();
-let allPosts        = [];
-let pendingSubTopic = null;
-let postCount       = 0;
-let currentFilter   = "all";
+let allPosts        = [];       // all posts currently in the feed
+let pendingSubTopic = null;     // topic waiting for subscribe confirmation
+let postCount       = 0;        // total posts received (for stats card)
+let currentFilter   = "all";   // "all" | "mine"
 
-// ── Socket.IO ─────────────────────────────────────────────────────────────────
+// ── Socket.IO — connect to Flask-SocketIO server ──────────────────────────────
 const socket = io();
 
 socket.on("connect", () => {
+  // turn the header dot green
   document.getElementById("conn-dot").classList.add("connected");
   socket.emit("set_username", { username: myUsername });
   socket.emit("get_subscriptions");
 });
+
 socket.on("disconnect", () => {
+  // turn the header dot grey
   document.getElementById("conn-dot").classList.remove("connected");
 });
 
-// a new post arrived for one of our subscribed topics
+// a new post was broadcast to a topic we're subscribed to
 socket.on("new_post", (data) => {
+  // store post_id from server alongside timestamp and ownership flag
   allPosts.unshift({ ...data, ts: Date.now(), fromMe: data.username === myUsername });
   postCount++;
   document.getElementById("stat-posts").textContent = postCount;
@@ -414,17 +438,26 @@ socket.on("new_post", (data) => {
   showNotifBubble(data);
 });
 
-socket.on("subscribed",        (d) => { mySubscriptions.add(d.topic);    syncUI(); });
-socket.on("unsubscribed",      (d) => { mySubscriptions.delete(d.topic); allPosts = allPosts.filter(p => p.topic !== d.topic); syncUI(); renderPosts(); });
-socket.on("my_subscriptions",  (d) => { d.topics.forEach(t => mySubscriptions.add(t)); syncUI(); });
+// another client (or us on another tab) deleted a post — remove it from feed
+socket.on("post_deleted", (data) => {
+  allPosts = allPosts.filter(p => p.post_id !== data.post_id);
+  renderPosts();
+});
 
-// ── Render ────────────────────────────────────────────────────────────────────
+socket.on("subscribed",       (d) => { mySubscriptions.add(d.topic);    syncUI(); });
+socket.on("unsubscribed",     (d) => { mySubscriptions.delete(d.topic); allPosts = allPosts.filter(p => p.topic !== d.topic); syncUI(); renderPosts(); });
+socket.on("my_subscriptions", (d) => { d.topics.forEach(t => mySubscriptions.add(t)); syncUI(); });
+
+// ── Render helpers ────────────────────────────────────────────────────────────
+
+// keep sidebar + strip + stats in sync whenever subscriptions change
 function syncUI() {
   document.getElementById("stat-subs").textContent = mySubscriptions.size;
   renderTopicStrip();
   renderSidebar();
 }
 
+// render the horizontal scrollable topic pills
 function renderTopicStrip() {
   document.getElementById("topic-strip").innerHTML = TOPICS.map(t => {
     const sub = mySubscriptions.has(t);
@@ -436,6 +469,7 @@ function renderTopicStrip() {
   }).join("");
 }
 
+// render the "My Threads" subscribed list in the sidebar
 function renderSidebar() {
   const list = document.getElementById("my-topics-list");
   if (mySubscriptions.size === 0) {
@@ -452,46 +486,86 @@ function renderSidebar() {
   }).join("");
 }
 
+// render post cards in the feed
 function renderPosts() {
   const container = document.getElementById("posts-container");
   const empty     = document.getElementById("empty-feed");
-  const filtered  = currentFilter === "mine" ? allPosts.filter(p => p.username === myUsername) : allPosts;
 
+  // apply current filter (all subscribed posts vs only my posts)
+  const filtered = currentFilter === "mine"
+    ? allPosts.filter(p => p.username === myUsername)
+    : allPosts;
+
+  // remove existing cards and rebuild
   container.querySelectorAll(".post-card").forEach(el => el.remove());
   empty.style.display = filtered.length === 0 ? "block" : "none";
 
   filtered.forEach(p => {
     const c    = getColor(p.topic);
-    const bg   = c + "33";
+    const bg   = c + "33";   // topic colour at ~20% opacity for avatar bg
     const card = document.createElement("div");
-    card.className  = "post-card";
+    card.className        = "post-card";
+    card.dataset.postId   = p.post_id;   // store id on the DOM element for easy targeting
     card.style.borderLeft = `3px solid ${c}`;
+
     card.innerHTML = `
       <div class="post-header">
+        <!-- round avatar showing user initials -->
         <div class="post-avatar" style="background:${bg};color:${c};">${getInitials(p.username)}</div>
         <div class="post-meta">
           <div class="post-username">${esc(p.username)}</div>
           <div class="post-time">${timeAgo(p.ts)}</div>
         </div>
+        <!-- topic badge -->
         <div class="post-topic-badge" style="background:${bg};color:${c};">${getLabel(p.topic)}</div>
+        <!-- delete button — only rendered on posts belonging to the current user -->
+        ${p.username === myUsername ? `
+          <button class="post-delete-btn" onclick="deletePost('${p.post_id}')" title="Delete post">×</button>
+        ` : ""}
       </div>
-      <div class="post-body">${esc(p.message)}</div>`;
+      <div class="post-body">${esc(p.message)}</div>
+    `;
+
     container.appendChild(card);
   });
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Utility helpers ───────────────────────────────────────────────────────────
+
+// escape HTML to prevent XSS from user-generated content
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const getInitials = n => n.split(/[\s_]/).map(w=>w[0]||"").join("").toUpperCase().slice(0,2)||"AN";
+
+// up to 2 initials from a username (e.g. "benny_d" → "BD")
+const getInitials = n => n.split(/[\s_]/).map(w => w[0] || "").join("").toUpperCase().slice(0,2) || "AN";
+
+// human-readable relative timestamp
 const timeAgo = ts => {
-  const s = Math.floor((Date.now()-ts)/1000);
-  if (s<5) return "just now";
-  if (s<60) return s+"s ago";
-  if (s<3600) return Math.floor(s/60)+"m ago";
-  return Math.floor(s/3600)+"h ago";
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 5)    return "just now";
+  if (s < 60)   return s + "s ago";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  return Math.floor(s / 3600) + "h ago";
 };
 
+// ── Delete post ───────────────────────────────────────────────────────────────
+function deletePost(post_id) {
+  // play a fade-out animation on the card before removing it
+  const card = document.querySelector(`[data-post-id="${post_id}"]`);
+  if (card) {
+    card.classList.add("deleting");
+    // wait for animation to finish then remove from state and re-render
+    setTimeout(() => {
+      allPosts = allPosts.filter(p => p.post_id !== post_id);
+      renderPosts();
+    }, 240);
+  }
+  // tell the server to broadcast the deletion to all other connected clients
+  socket.emit("delete_post", { post_id });
+}
+
 // ── Subscribe / unsubscribe ───────────────────────────────────────────────────
+
+// clicking an unsubscribed pill shows the confirm bar at the bottom
 function handleTopicClick(topic) {
   if (mySubscriptions.has(topic)) return;
   pendingSubTopic = topic;
@@ -500,75 +574,112 @@ function handleTopicClick(topic) {
     `Subscribe to <strong style="color:${c};">#${getLabel(topic)}</strong>?`;
   const bar = document.getElementById("sub-confirm");
   bar.classList.remove("hidden");
+  // auto-dismiss after 6 seconds if user ignores it
   setTimeout(() => bar.classList.add("hidden"), 6000);
 }
-function confirmSubscribe() { if (pendingSubTopic) { socket.emit("subscribe",{topic:pendingSubTopic}); hideSubConfirm(); } }
-function hideSubConfirm()   { document.getElementById("sub-confirm").classList.add("hidden"); pendingSubTopic=null; }
-function unsubscribe(topic) { socket.emit("unsubscribe",{topic}); }
-function setFilter(f,btn)   { currentFilter=f; document.querySelectorAll(".filter-btn").forEach(b=>b.classList.remove("active")); btn.classList.add("active"); renderPosts(); }
+
+function confirmSubscribe() {
+  if (pendingSubTopic) { socket.emit("subscribe", { topic: pendingSubTopic }); hideSubConfirm(); }
+}
+function hideSubConfirm() {
+  document.getElementById("sub-confirm").classList.add("hidden");
+  pendingSubTopic = null;
+}
+function unsubscribe(topic) { socket.emit("unsubscribe", { topic }); }
+
+// toggle between "all subscribed" and "posted by me" filters
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  renderPosts();
+}
 
 // ── Username modal ────────────────────────────────────────────────────────────
-function openUsernameModal()  { document.getElementById("username-input").value=myUsername==="Anonymous"?"":myUsername; document.getElementById("username-modal").classList.remove("hidden"); setTimeout(()=>document.getElementById("username-input").focus(),100); }
+function openUsernameModal() {
+  document.getElementById("username-input").value = myUsername === "Anonymous" ? "" : myUsername;
+  document.getElementById("username-modal").classList.remove("hidden");
+  setTimeout(() => document.getElementById("username-input").focus(), 100);
+}
 function closeUsernameModal() { document.getElementById("username-modal").classList.add("hidden"); }
 function saveUsername() {
   const v = document.getElementById("username-input").value.trim();
   if (!v) return;
   myUsername = v;
-  document.getElementById("username-display").textContent = "@"+v;
-  socket.emit("set_username",{username:v});
+  document.getElementById("username-display").textContent = "@" + v;
+  socket.emit("set_username", { username: v });
   closeUsernameModal();
 }
 
-// ── Post modal ────────────────────────────────────────────────────────────────
+// ── Create post modal ─────────────────────────────────────────────────────────
 function openPostModal() {
-  const topics = mySubscriptions.size>0 ? [...mySubscriptions] : TOPICS;
-  document.getElementById("post-topic-select").innerHTML = topics.map(t=>`<option value="${t}">${getLabel(t)}</option>`).join("");
-  document.getElementById("post-message").value="";
+  // populate dropdown with subscribed topics, or all topics if none subscribed yet
+  const topics = mySubscriptions.size > 0 ? [...mySubscriptions] : TOPICS;
+  document.getElementById("post-topic-select").innerHTML =
+    topics.map(t => `<option value="${t}">${getLabel(t)}</option>`).join("");
+  document.getElementById("post-message").value = "";
   document.getElementById("post-modal").classList.remove("hidden");
-  setTimeout(()=>document.getElementById("post-message").focus(),100);
+  setTimeout(() => document.getElementById("post-message").focus(), 100);
 }
 function closePostModal() { document.getElementById("post-modal").classList.add("hidden"); }
 function submitPost() {
   const topic   = document.getElementById("post-topic-select").value;
   const message = document.getElementById("post-message").value.trim();
   if (!message) return;
-  socket.emit("post",{topic,message});
+
+  // generate a unique id for this post so it can be identified and deleted later
+  const post_id = Date.now() + "_" + Math.random().toString(36).slice(2);
+
+  socket.emit("post", { topic, message, post_id });
   closePostModal();
 }
 
-// ── Notification bubble ───────────────────────────────────────────────────────
+// ── Notification bubble (real-time popping notification) ─────────────────────
 let notifTimer = null;
 function showNotifBubble(data) {
+  // don't show a bubble for our own posts
   if (data.username === myUsername) return;
   const c = getColor(data.topic);
   document.querySelector(".notif-bubble")?.remove();
   if (notifTimer) clearTimeout(notifTimer);
   const el = document.createElement("div");
-  el.className = "notif-bubble";
+  el.className        = "notif-bubble";
   el.style.borderLeft = `3px solid ${c}`;
   el.innerHTML = `
     <div class="notif-topic" style="color:${c};">#${getLabel(data.topic)}</div>
-    <div class="notif-msg">${esc(data.message.slice(0,80))}${data.message.length>80?"…":""}</div>
+    <div class="notif-msg">${esc(data.message.slice(0, 80))}${data.message.length > 80 ? "…" : ""}</div>
     <div class="notif-user">from ${esc(data.username)}</div>`;
   document.body.appendChild(el);
-  notifTimer = setTimeout(()=>el.remove(), 4500);
+  // auto-dismiss after 4.5 seconds
+  notifTimer = setTimeout(() => el.remove(), 4500);
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 document.addEventListener("keydown", e => {
-  if (e.key==="Escape") { closePostModal(); closeUsernameModal(); hideSubConfirm(); }
-  if ((e.ctrlKey||e.metaKey)&&e.key==="Enter") {
-    if (!document.getElementById("post-modal").classList.contains("hidden")) submitPost();
+  // Escape closes any open modal or confirm bar
+  if (e.key === "Escape") { closePostModal(); closeUsernameModal(); hideSubConfirm(); }
+  // Ctrl/Cmd + Enter submits the active modal
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    if (!document.getElementById("post-modal").classList.contains("hidden"))     submitPost();
     if (!document.getElementById("username-modal").classList.contains("hidden")) saveUsername();
   }
 });
-document.querySelectorAll(".modal-overlay").forEach(o => o.addEventListener("click", e => { if(e.target===o){closePostModal();closeUsernameModal();} }));
+// clicking the dark overlay behind a modal closes it
+document.querySelectorAll(".modal-overlay").forEach(o =>
+  o.addEventListener("click", e => { if (e.target === o) { closePostModal(); closeUsernameModal(); } })
+);
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderTopicStrip();
 renderSidebar();
-setTimeout(()=>{ if(myUsername==="Anonymous") openUsernameModal(); }, 800);
-setInterval(()=>{ document.querySelectorAll(".post-time").forEach((el,i)=>{ if(allPosts[i]) el.textContent=timeAgo(allPosts[i].ts); }); }, 30000);
+// prompt for username on first visit
+setTimeout(() => { if (myUsername === "Anonymous") openUsernameModal(); }, 800);
+// refresh "X ago" timestamps every 30 seconds
+setInterval(() => {
+  document.querySelectorAll(".post-time").forEach((el, i) => {
+    if (allPosts[i]) el.textContent = timeAgo(allPosts[i].ts);
+  });
+}, 30000);
 </script>
 </body>
 </html>
