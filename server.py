@@ -288,14 +288,15 @@ def on_post(data):
 
     username = web_usernames.get(sid, "Anonymous")
 
-    # broadcast to all browser clients subscribed to this topic
-    payload = {"topic": topic, "username": username, "message": message}
-    socketio.emit("new_post", payload, room=topic)
+   # include post_id in the broadcast so clients can use it to delete the post later
+post_id = data.get("post_id")
+payload = {"topic": topic, "username": username, "message": message, "post_id": post_id}
+socketio.emit("new_post", payload, room=topic)
 
     # also forward to raw TCP subscribers so both client types receive it
     formatted = f"[{topic.upper()}] {username}: {message}"
     tcp_broadcast(topic, formatted)
-    
+
 @socketio.on("delete_post")
 def on_delete_post(data):
     # client sends the post id they want to delete
