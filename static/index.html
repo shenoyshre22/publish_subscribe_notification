@@ -174,7 +174,6 @@
       padding: 3px 9px; border-radius: 20px;
       letter-spacing: .5px; text-transform: uppercase;
     }
-
     /* delete button — only shown on current user's own posts */
     .post-delete-btn {
       background: none; border: none; cursor: pointer;
@@ -184,7 +183,6 @@
       margin-left: 6px; flex-shrink: 0;
     }
     .post-delete-btn:hover { color: var(--accent); background: rgba(232,65,78,0.1); }
-
     .post-body { font-size: 14px; line-height: 1.6; padding-left: 38px; }
 
     .empty-feed { text-align: center; padding: 80px 20px; color: var(--muted); }
@@ -261,6 +259,14 @@
     .notif-topic { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
     .notif-msg  { font-size: 13px; }
     .notif-user { font-size: 11px; color: var(--muted); }
+
+    /* ── DELETE CONFIRMATION MODAL ── */
+    .delete-modal-icon { font-size: 36px; margin-bottom: 14px; }
+    .delete-modal-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    .delete-modal-desc { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 24px; }
+    .delete-modal-btns { display: flex; gap: 10px; }
+    .btn-danger { background: #c0392b; color: #fff; }
+    .btn-danger:hover { background: #e74c3c; transform: translateY(-1px); }
 
     @media (max-width: 700px) { aside { display: none; } }
   </style>
@@ -376,6 +382,19 @@
   </div>
 </div>
 
+<!-- DELETE CONFIRMATION MODAL -->
+<div class="modal-overlay hidden" id="delete-modal">
+  <div class="modal" style="max-width:360px; text-align:center;">
+    <div class="delete-modal-icon">🗑️</div>
+    <div class="delete-modal-title">Delete post?</div>
+    <div class="delete-modal-desc">This will remove the post for everyone.<br/>This can't be undone.</div>
+    <div class="delete-modal-btns">
+      <button class="btn btn-ghost"  style="flex:1;" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn btn-danger" style="flex:1;" id="confirm-delete-btn">Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- SUBSCRIBE CONFIRM BAR -->
 <div class="sub-confirm hidden" id="sub-confirm">
   <span id="sub-confirm-text"></span>
@@ -408,29 +427,27 @@ const getLabel = t => TOPIC_LABELS[t] || t;
 // ── App state ─────────────────────────────────────────────────────────────────
 let myUsername      = "Anonymous";
 let mySubscriptions = new Set();
-let allPosts        = [];       // all posts currently in the feed
-let pendingSubTopic = null;     // topic waiting for subscribe confirmation
-let postCount       = 0;        // total posts received (for stats card)
-let currentFilter   = "all";   // "all" | "mine"
+let allPosts        = [];
+let pendingSubTopic = null;
+let postCount       = 0;
+let currentFilter   = "all";
 
 // ── Socket.IO — connect to Flask-SocketIO server ──────────────────────────────
 const socket = io();
 
 socket.on("connect", () => {
-  // turn the header dot green
   document.getElementById("conn-dot").classList.add("connected");
   socket.emit("set_username", { username: myUsername });
   socket.emit("get_subscriptions");
 });
 
 socket.on("disconnect", () => {
-  // turn the header dot grey
   document.getElementById("conn-dot").classList.remove("connected");
 });
 
 // a new post was broadcast to a topic we're subscribed to
 socket.on("new_post", (data) => {
-  // store post_id from server alongside timestamp and ownership flag
+  // post_id comes from the server and is used for deletion
   allPosts.unshift({ ...data, ts: Date.now(), fromMe: data.username === myUsername });
   postCount++;
   document.getElementById("stat-posts").textContent = postCount;
@@ -438,7 +455,7 @@ socket.on("new_post", (data) => {
   showNotifBubble(data);
 });
 
-// another client (or us on another tab) deleted a post — remove it from feed
+// another client deleted a post — remove it from our feed too
 socket.on("post_deleted", (data) => {
   allPosts = allPosts.filter(p => p.post_id !== data.post_id);
   renderPosts();
@@ -450,14 +467,12 @@ socket.on("my_subscriptions", (d) => { d.topics.forEach(t => mySubscriptions.add
 
 // ── Render helpers ────────────────────────────────────────────────────────────
 
-// keep sidebar + strip + stats in sync whenever subscriptions change
 function syncUI() {
   document.getElementById("stat-subs").textContent = mySubscriptions.size;
   renderTopicStrip();
   renderSidebar();
 }
 
-// render the horizontal scrollable topic pills
 function renderTopicStrip() {
   document.getElementById("topic-strip").innerHTML = TOPICS.map(t => {
     const sub = mySubscriptions.has(t);
@@ -469,7 +484,6 @@ function renderTopicStrip() {
   }).join("");
 }
 
-// render the "My Threads" subscribed list in the sidebar
 function renderSidebar() {
   const list = document.getElementById("my-topics-list");
   if (mySubscriptions.size === 0) {
@@ -486,59 +500,46 @@ function renderSidebar() {
   }).join("");
 }
 
-// render post cards in the feed
 function renderPosts() {
   const container = document.getElementById("posts-container");
   const empty     = document.getElementById("empty-feed");
 
-  // apply current filter (all subscribed posts vs only my posts)
   const filtered = currentFilter === "mine"
     ? allPosts.filter(p => p.username === myUsername)
     : allPosts;
 
-  // remove existing cards and rebuild
   container.querySelectorAll(".post-card").forEach(el => el.remove());
   empty.style.display = filtered.length === 0 ? "block" : "none";
 
   filtered.forEach(p => {
     const c    = getColor(p.topic);
-    const bg   = c + "33";   // topic colour at ~20% opacity for avatar bg
+    const bg   = c + "33";
     const card = document.createElement("div");
     card.className        = "post-card";
-    card.dataset.postId   = p.post_id;   // store id on the DOM element for easy targeting
+    card.dataset.postId   = p.post_id;
     card.style.borderLeft = `3px solid ${c}`;
 
     card.innerHTML = `
       <div class="post-header">
-        <!-- round avatar showing user initials -->
         <div class="post-avatar" style="background:${bg};color:${c};">${getInitials(p.username)}</div>
         <div class="post-meta">
           <div class="post-username">${esc(p.username)}</div>
           <div class="post-time">${timeAgo(p.ts)}</div>
         </div>
-        <!-- topic badge -->
         <div class="post-topic-badge" style="background:${bg};color:${c};">${getLabel(p.topic)}</div>
-        <!-- delete button — only rendered on posts belonging to the current user -->
         ${p.username === myUsername ? `
           <button class="post-delete-btn" onclick="deletePost('${p.post_id}')" title="Delete post">×</button>
         ` : ""}
       </div>
       <div class="post-body">${esc(p.message)}</div>
     `;
-
     container.appendChild(card);
   });
 }
 
 // ── Utility helpers ───────────────────────────────────────────────────────────
-
-// escape HTML to prevent XSS from user-generated content
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-
-// up to 2 initials from a username (e.g. "benny_d" → "BD")
 const getInitials = n => n.split(/[\s_]/).map(w => w[0] || "").join("").toUpperCase().slice(0,2) || "AN";
-
-// human-readable relative timestamp
 const timeAgo = ts => {
   const s = Math.floor((Date.now() - ts) / 1000);
   if (s < 5)    return "just now";
@@ -548,30 +549,39 @@ const timeAgo = ts => {
 };
 
 // ── Delete post ───────────────────────────────────────────────────────────────
+
+// opens the in-app styled delete confirmation modal
 function deletePost(post_id) {
-  // show a confirmation dialog before deleting
-  if (!confirm("Are you sure you want to delete this post?")) return;
+  document.getElementById("delete-modal").classList.remove("hidden");
 
-  // play a fade-out animation on the card before removing it
-  const card = document.querySelector(`[data-post-id="${post_id}"]`);
-  if (card) {
-    card.classList.add("deleting");
-    // wait for animation to finish then remove from state and re-render
-    setTimeout(() => {
-      allPosts = allPosts.filter(p => p.post_id !== post_id);
-      renderPosts();
-    }, 240);
-  }
-  // tell the server to broadcast the deletion to all other connected clients
-  socket.emit("delete_post", { post_id });
+  // wire up the confirm button — clone it first to remove any previous listener
+  const oldBtn = document.getElementById("confirm-delete-btn");
+  const newBtn = oldBtn.cloneNode(true);
+  oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+
+  newBtn.addEventListener("click", () => {
+    closeDeleteModal();
+
+    // play fade-out animation on the card before removing it
+    const card = document.querySelector(`[data-post-id="${post_id}"]`);
+    if (card) {
+      card.classList.add("deleting");
+      setTimeout(() => {
+        allPosts = allPosts.filter(p => p.post_id !== post_id);
+        renderPosts();
+      }, 240);
+    }
+
+    // broadcast the deletion to all other connected clients via server
+    socket.emit("delete_post", { post_id });
+  });
 }
-  // tell the server to broadcast the deletion to all other connected clients
-  socket.emit("delete_post", { post_id });
 
+function closeDeleteModal() {
+  document.getElementById("delete-modal").classList.add("hidden");
+}
 
 // ── Subscribe / unsubscribe ───────────────────────────────────────────────────
-
-// clicking an unsubscribed pill shows the confirm bar at the bottom
 function handleTopicClick(topic) {
   if (mySubscriptions.has(topic)) return;
   pendingSubTopic = topic;
@@ -580,10 +590,8 @@ function handleTopicClick(topic) {
     `Subscribe to <strong style="color:${c};">#${getLabel(topic)}</strong>?`;
   const bar = document.getElementById("sub-confirm");
   bar.classList.remove("hidden");
-  // auto-dismiss after 6 seconds if user ignores it
   setTimeout(() => bar.classList.add("hidden"), 6000);
 }
-
 function confirmSubscribe() {
   if (pendingSubTopic) { socket.emit("subscribe", { topic: pendingSubTopic }); hideSubConfirm(); }
 }
@@ -592,8 +600,6 @@ function hideSubConfirm() {
   pendingSubTopic = null;
 }
 function unsubscribe(topic) { socket.emit("unsubscribe", { topic }); }
-
-// toggle between "all subscribed" and "posted by me" filters
 function setFilter(f, btn) {
   currentFilter = f;
   document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
@@ -619,7 +625,6 @@ function saveUsername() {
 
 // ── Create post modal ─────────────────────────────────────────────────────────
 function openPostModal() {
-  // populate dropdown with subscribed topics, or all topics if none subscribed yet
   const topics = mySubscriptions.size > 0 ? [...mySubscriptions] : TOPICS;
   document.getElementById("post-topic-select").innerHTML =
     topics.map(t => `<option value="${t}">${getLabel(t)}</option>`).join("");
@@ -632,18 +637,15 @@ function submitPost() {
   const topic   = document.getElementById("post-topic-select").value;
   const message = document.getElementById("post-message").value.trim();
   if (!message) return;
-
-  // generate a unique id for this post so it can be identified and deleted later
+  // generate a unique id so this post can be identified for deletion
   const post_id = Date.now() + "_" + Math.random().toString(36).slice(2);
-
   socket.emit("post", { topic, message, post_id });
   closePostModal();
 }
 
-// ── Notification bubble (real-time popping notification) ─────────────────────
+// ── Notification bubble ───────────────────────────────────────────────────────
 let notifTimer = null;
 function showNotifBubble(data) {
-  // don't show a bubble for our own posts
   if (data.username === myUsername) return;
   const c = getColor(data.topic);
   document.querySelector(".notif-bubble")?.remove();
@@ -656,14 +658,18 @@ function showNotifBubble(data) {
     <div class="notif-msg">${esc(data.message.slice(0, 80))}${data.message.length > 80 ? "…" : ""}</div>
     <div class="notif-user">from ${esc(data.username)}</div>`;
   document.body.appendChild(el);
-  // auto-dismiss after 4.5 seconds
   notifTimer = setTimeout(() => el.remove(), 4500);
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 document.addEventListener("keydown", e => {
   // Escape closes any open modal or confirm bar
-  if (e.key === "Escape") { closePostModal(); closeUsernameModal(); hideSubConfirm(); }
+  if (e.key === "Escape") {
+    closePostModal();
+    closeUsernameModal();
+    closeDeleteModal();
+    hideSubConfirm();
+  }
   // Ctrl/Cmd + Enter submits the active modal
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
     if (!document.getElementById("post-modal").classList.contains("hidden"))     submitPost();
@@ -672,15 +678,15 @@ document.addEventListener("keydown", e => {
 });
 // clicking the dark overlay behind a modal closes it
 document.querySelectorAll(".modal-overlay").forEach(o =>
-  o.addEventListener("click", e => { if (e.target === o) { closePostModal(); closeUsernameModal(); } })
+  o.addEventListener("click", e => {
+    if (e.target === o) { closePostModal(); closeUsernameModal(); closeDeleteModal(); }
+  })
 );
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderTopicStrip();
 renderSidebar();
-// prompt for username on first visit
 setTimeout(() => { if (myUsername === "Anonymous") openUsernameModal(); }, 800);
-// refresh "X ago" timestamps every 30 seconds
 setInterval(() => {
   document.querySelectorAll(".post-time").forEach((el, i) => {
     if (allPosts[i]) el.textContent = timeAgo(allPosts[i].ts);

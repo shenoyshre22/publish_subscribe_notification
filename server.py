@@ -2,13 +2,14 @@ import socket                 # provides networking functionality
 import threading              # allows multiple clients to connect simultaneously
 from topics import TOPICS     # import the list of allowed topics
 
-# Flask + SocketIO so the browser (index.html) can connect via WebSockets (to integrate frontend and backend in one server)
+# NEW: Flask + SocketIO so the browser (index.html) can connect via WebSockets
 from flask import Flask, send_from_directory
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask import request as sio_request
 
+# ─────────────────────────────────────────────────────────────────────────────
 # RAW TCP SERVER (original — keeps client.py working)
-
+# ─────────────────────────────────────────────────────────────────────────────
 
 # 0.0.0.0 means accept connections from any machine on the network
 HOST = "0.0.0.0"
@@ -137,9 +138,10 @@ def handle_tcp_client(conn, addr):
 
                 # NEW: also push to web (browser) clients subscribed to this topic
                 socketio.emit("new_post", {
-                    "topic": topic,
+                    "topic":    topic,
                     "username": username,
-                    "message": message,
+                    "message":  message,
+                    "post_id":  None,   # TCP posts don't have a post_id
                 }, room=topic)
 
             else:
@@ -194,10 +196,12 @@ def run_tcp_server():
         # start the thread
         thread.start()
 
-# WEB SERVER  (NEW addd on — this serves index.html and handles browser WebSocket clients)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# WEB SERVER  (NEW — serves index.html and handles browser WebSocket clients)
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Flask serves the static files (index.html, style.css, app.js)
+# Flask serves the static files (index.html) from the static/ folder
 app = Flask(__name__, static_folder="static", template_folder="static")
 app.config["SECRET_KEY"] = "netthreads_secret"
 
@@ -245,15 +249,15 @@ def on_subscribe(data):
     sid = sio_request.sid
     topic = data.get("topic", "")
 
-    # check if topic exists in the topics.py file
+    # check if topic exists
     if topic not in TOPICS:
         emit("server_msg", {"text": f"Unknown topic: {topic}"})
         return
 
-    # FIX: prevent duplicate subscriptions (same as the TCP side)
+    # FIX: prevent duplicate subscriptions (same as TCP side)
     web_subscriptions[topic].add(sid)
 
-    # join_room makes SocketIO route broadcasts only to those who have been subscribers of this topic
+    # join_room makes SocketIO route broadcasts only to subscribers of this topic
     join_room(topic)
 
     emit("subscribed", {"topic": topic})
@@ -274,7 +278,7 @@ def on_unsubscribe(data):
 @socketio.on("post")
 def on_post(data):
     sid = sio_request.sid
-    topic = data.get("topic", "")
+    topic   = data.get("topic", "")
     message = data.get("message", "").strip()
 
     # validate topic
@@ -288,25 +292,25 @@ def on_post(data):
 
     username = web_usernames.get(sid, "Anonymous")
 
-    
     # include post_id in the broadcast so clients can use it to delete the post later
     post_id = data.get("post_id")
+
+    # broadcast to all browser clients subscribed to this topic
     payload = {"topic": topic, "username": username, "message": message, "post_id": post_id}
     socketio.emit("new_post", payload, room=topic)
-
 
     # also forward to raw TCP subscribers so both client types receive it
     formatted = f"[{topic.upper()}] {username}: {message}"
     tcp_broadcast(topic, formatted)
-    
+
 @socketio.on("delete_post")
 def on_delete_post(data):
-    # client sends the post id they want to delete
-    sid = sio_request.sid
-    post_id   = data.get("post_id")
-    username  = web_usernames.get(sid, "Anonymous")
+    # client sends the post_id they want to delete
+    sid      = sio_request.sid
+    post_id  = data.get("post_id")
+    username = web_usernames.get(sid, "Anonymous")
 
-    # broadcast the deletion to all clients so everyone removes it from their feed
+    # broadcast the deletion to ALL clients so everyone removes it from their feed
     socketio.emit("post_deleted", {
         "post_id":  post_id,
         "username": username,
@@ -319,8 +323,10 @@ def on_get_subscriptions():
     my_subs = [t for t in TOPICS if sid in web_subscriptions[t]]
     emit("my_subscriptions", {"topics": my_subs})
 
-# ENTRY POINT from heree
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ENTRY POINT
+# ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
 
