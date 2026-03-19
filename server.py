@@ -295,6 +295,19 @@ def on_post(data):
     # also forward to raw TCP subscribers so both client types receive it
     formatted = f"[{topic.upper()}] {username}: {message}"
     tcp_broadcast(topic, formatted)
+    
+@socketio.on("delete_post")
+def on_delete_post(data):
+    # client sends the post id they want to delete
+    sid = sio_request.sid
+    post_id   = data.get("post_id")
+    username  = web_usernames.get(sid, "Anonymous")
+
+    # broadcast the deletion to all clients so everyone removes it from their feed
+    socketio.emit("post_deleted", {
+        "post_id":  post_id,
+        "username": username,
+    })
 
 @socketio.on("get_subscriptions")
 def on_get_subscriptions():
