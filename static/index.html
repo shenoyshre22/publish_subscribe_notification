@@ -549,6 +549,9 @@ const timeAgo = ts => {
 
 // ── Delete post ───────────────────────────────────────────────────────────────
 function deletePost(post_id) {
+  // show a confirmation dialog before deleting
+  if (!confirm("Are you sure you want to delete this post?")) return;
+
   // play a fade-out animation on the card before removing it
   const card = document.querySelector(`[data-post-id="${post_id}"]`);
   if (card) {
@@ -559,6 +562,9 @@ function deletePost(post_id) {
       renderPosts();
     }, 240);
   }
+  // tell the server to broadcast the deletion to all other connected clients
+  socket.emit("delete_post", { post_id });
+}
   // tell the server to broadcast the deletion to all other connected clients
   socket.emit("delete_post", { post_id });
 }
