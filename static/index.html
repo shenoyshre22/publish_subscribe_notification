@@ -64,6 +64,8 @@
     .btn-primary:hover { background: var(--accent2); transform: translateY(-1px); }
     .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
     .btn-ghost:hover { border-color: var(--accent); }
+    .btn-danger { background: #c0392b; color: #fff; }
+    .btn-danger:hover { background: #e74c3c; transform: translateY(-1px); }
 
     /* ── LAYOUT ── */
     .main { display: flex; flex: 1; height: calc(100vh - 58px); overflow: hidden; }
@@ -152,10 +154,7 @@
       from { opacity: 0; transform: translateY(10px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-    /* fade-out animation when a post is deleted */
-    .post-card.deleting {
-      animation: fadeOut .25s ease forwards;
-    }
+    .post-card.deleting { animation: fadeOut .25s ease forwards; }
     @keyframes fadeOut {
       from { opacity: 1; transform: scale(1); }
       to   { opacity: 0; transform: scale(0.97); }
@@ -174,7 +173,6 @@
       padding: 3px 9px; border-radius: 20px;
       letter-spacing: .5px; text-transform: uppercase;
     }
-    /* delete button — only shown on current user's own posts */
     .post-delete-btn {
       background: none; border: none; cursor: pointer;
       color: var(--muted); font-size: 18px; line-height: 1;
@@ -190,7 +188,7 @@
     .empty-feed h3 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
     .empty-feed p  { font-size: 14px; line-height: 1.6; }
 
-    /* ── MODALS ── */
+    /* ── MODALS (shared styles) ── */
     .modal-overlay {
       position: fixed; inset: 0; z-index: 500;
       background: rgba(0,0,0,0.75);
@@ -227,21 +225,30 @@
     textarea.form-input { resize: vertical; min-height: 100px; }
     .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 
-    /* ── SUBSCRIBE CONFIRM BAR ── */
-    .sub-confirm {
-      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; padding: 14px 20px;
-      display: flex; align-items: center; gap: 12px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-      z-index: 400; font-size: 14px;
-      animation: slideUp .25s ease;
+    /* ── SUBSCRIBE CONFIRM MODAL (centred, bigger) ── */
+    .sub-modal-icon {
+      font-size: 40px; margin-bottom: 16px;
     }
-    .sub-confirm.hidden { display: none; }
-    @keyframes slideUp {
-      from { opacity: 0; transform: translateX(-50%) translateY(10px); }
-      to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .sub-modal-topic-badge {
+      display: inline-block;
+      font-size: 13px; font-weight: 700;
+      padding: 6px 16px; border-radius: 20px;
+      margin-bottom: 16px;
+      letter-spacing: 0.5px;
     }
+    .sub-modal-desc {
+      font-size: 14px; color: var(--muted);
+      line-height: 1.7; margin-bottom: 28px;
+    }
+    .sub-modal-btns {
+      display: flex; gap: 12px;
+    }
+
+    /* ── DELETE CONFIRM MODAL ── */
+    .delete-modal-icon { font-size: 36px; margin-bottom: 14px; }
+    .delete-modal-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    .delete-modal-desc { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 24px; }
+    .delete-modal-btns { display: flex; gap: 10px; }
 
     /* ── NOTIFICATION BUBBLE ── */
     .notif-bubble {
@@ -259,14 +266,6 @@
     .notif-topic { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
     .notif-msg  { font-size: 13px; }
     .notif-user { font-size: 11px; color: var(--muted); }
-
-    /* ── DELETE CONFIRMATION MODAL ── */
-    .delete-modal-icon { font-size: 36px; margin-bottom: 14px; }
-    .delete-modal-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
-    .delete-modal-desc { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 24px; }
-    .delete-modal-btns { display: flex; gap: 10px; }
-    .btn-danger { background: #c0392b; color: #fff; }
-    .btn-danger:hover { background: #e74c3c; transform: translateY(-1px); }
 
     @media (max-width: 700px) { aside { display: none; } }
   </style>
@@ -382,24 +381,37 @@
   </div>
 </div>
 
+<!-- SUBSCRIBE CONFIRM MODAL (centred, full modal) -->
+<div class="modal-overlay hidden" id="sub-modal">
+  <div class="modal" style="max-width: 400px; text-align: center;">
+    <div class="sub-modal-icon">🔔</div>
+    <!-- topic name + colour badge injected by JS -->
+    <div id="sub-modal-badge" class="sub-modal-topic-badge"></div>
+    <h2 style="margin-bottom: 10px;">Subscribe to this topic?</h2>
+    <div class="sub-modal-desc">
+      You'll receive all new posts from this topic in your feed in real time.
+      You can unsubscribe any time from the sidebar.
+    </div>
+    <div class="sub-modal-btns">
+      <button class="btn btn-ghost"   style="flex:1;" onclick="closeSubModal()">Not now</button>
+      <button class="btn btn-primary" style="flex:1;" id="sub-modal-confirm-btn">Subscribe</button>
+    </div>
+  </div>
+</div>
+
 <!-- DELETE CONFIRMATION MODAL -->
 <div class="modal-overlay hidden" id="delete-modal">
-  <div class="modal" style="max-width:360px; text-align:center;">
+  <div class="modal" style="max-width: 360px; text-align: center;">
     <div class="delete-modal-icon">🗑️</div>
     <div class="delete-modal-title">Delete post?</div>
-    <div class="delete-modal-desc">This will remove the post for everyone.<br/>This can't be undone.</div>
+    <div class="delete-modal-desc">
+      This will remove the post for everyone.<br/>This can't be undone.
+    </div>
     <div class="delete-modal-btns">
       <button class="btn btn-ghost"  style="flex:1;" onclick="closeDeleteModal()">Cancel</button>
       <button class="btn btn-danger" style="flex:1;" id="confirm-delete-btn">Delete</button>
     </div>
   </div>
-</div>
-
-<!-- SUBSCRIBE CONFIRM BAR -->
-<div class="sub-confirm hidden" id="sub-confirm">
-  <span id="sub-confirm-text"></span>
-  <button class="btn btn-primary" style="padding:6px 14px;font-size:12px;" onclick="confirmSubscribe()">Subscribe</button>
-  <button class="btn btn-ghost"   style="padding:6px 10px;font-size:12px;" onclick="hideSubConfirm()">✕</button>
 </div>
 
 <script>
@@ -432,7 +444,7 @@ let pendingSubTopic = null;
 let postCount       = 0;
 let currentFilter   = "all";
 
-// ── Socket.IO — connect to Flask-SocketIO server ──────────────────────────────
+// ── Socket.IO ─────────────────────────────────────────────────────────────────
 const socket = io();
 
 socket.on("connect", () => {
@@ -445,9 +457,8 @@ socket.on("disconnect", () => {
   document.getElementById("conn-dot").classList.remove("connected");
 });
 
-// a new post was broadcast to a topic we're subscribed to
+// a new post was broadcast to a subscribed topic
 socket.on("new_post", (data) => {
-  // post_id comes from the server and is used for deletion
   allPosts.unshift({ ...data, ts: Date.now(), fromMe: data.username === myUsername });
   postCount++;
   document.getElementById("stat-posts").textContent = postCount;
@@ -455,7 +466,7 @@ socket.on("new_post", (data) => {
   showNotifBubble(data);
 });
 
-// another client deleted a post — remove it from our feed too
+// another client deleted a post — remove it from our feed
 socket.on("post_deleted", (data) => {
   allPosts = allPosts.filter(p => p.post_id !== data.post_id);
   renderPosts();
@@ -465,8 +476,7 @@ socket.on("subscribed",       (d) => { mySubscriptions.add(d.topic);    syncUI()
 socket.on("unsubscribed",     (d) => { mySubscriptions.delete(d.topic); allPosts = allPosts.filter(p => p.topic !== d.topic); syncUI(); renderPosts(); });
 socket.on("my_subscriptions", (d) => { d.topics.forEach(t => mySubscriptions.add(t)); syncUI(); });
 
-// ── Render helpers ────────────────────────────────────────────────────────────
-
+// ── Render ────────────────────────────────────────────────────────────────────
 function syncUI() {
   document.getElementById("stat-subs").textContent = mySubscriptions.size;
   renderTopicStrip();
@@ -503,10 +513,7 @@ function renderSidebar() {
 function renderPosts() {
   const container = document.getElementById("posts-container");
   const empty     = document.getElementById("empty-feed");
-
-  const filtered = currentFilter === "mine"
-    ? allPosts.filter(p => p.username === myUsername)
-    : allPosts;
+  const filtered  = currentFilter === "mine" ? allPosts.filter(p => p.username === myUsername) : allPosts;
 
   container.querySelectorAll(".post-card").forEach(el => el.remove());
   empty.style.display = filtered.length === 0 ? "block" : "none";
@@ -518,7 +525,6 @@ function renderPosts() {
     card.className        = "post-card";
     card.dataset.postId   = p.post_id;
     card.style.borderLeft = `3px solid ${c}`;
-
     card.innerHTML = `
       <div class="post-header">
         <div class="post-avatar" style="background:${bg};color:${c};">${getInitials(p.username)}</div>
@@ -537,7 +543,7 @@ function renderPosts() {
   });
 }
 
-// ── Utility helpers ───────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const getInitials = n => n.split(/[\s_]/).map(w => w[0] || "").join("").toUpperCase().slice(0,2) || "AN";
 const timeAgo = ts => {
@@ -548,21 +554,55 @@ const timeAgo = ts => {
   return Math.floor(s / 3600) + "h ago";
 };
 
-// ── Delete post ───────────────────────────────────────────────────────────────
+// ── Subscribe confirm modal (centred, big) ────────────────────────────────────
 
-// opens the in-app styled delete confirmation modal
+// called when user clicks a topic pill they aren't subscribed to
+function handleTopicClick(topic) {
+  if (mySubscriptions.has(topic)) return;
+
+  pendingSubTopic = topic;
+  const c  = getColor(topic);
+  const bg = c + "22";
+
+  // set the coloured topic badge inside the modal
+  const badge = document.getElementById("sub-modal-badge");
+  badge.textContent    = "#" + getLabel(topic);
+  badge.style.color      = c;
+  badge.style.background = bg;
+  badge.style.border     = `1.5px solid ${c}`;
+
+  // wire up the confirm button (clone to remove stale listeners)
+  const oldBtn = document.getElementById("sub-modal-confirm-btn");
+  const newBtn = oldBtn.cloneNode(true);
+  newBtn.style.background = c;   // button colour matches topic colour
+  oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+  newBtn.addEventListener("click", () => {
+    socket.emit("subscribe", { topic: pendingSubTopic });
+    closeSubModal();
+  });
+
+  document.getElementById("sub-modal").classList.remove("hidden");
+}
+
+function closeSubModal() {
+  document.getElementById("sub-modal").classList.add("hidden");
+  pendingSubTopic = null;
+}
+
+function unsubscribe(topic) { socket.emit("unsubscribe", { topic }); }
+
+// ── Delete confirm modal ──────────────────────────────────────────────────────
 function deletePost(post_id) {
   document.getElementById("delete-modal").classList.remove("hidden");
 
-  // wire up the confirm button — clone it first to remove any previous listener
+  // clone button to remove any previous click listener
   const oldBtn = document.getElementById("confirm-delete-btn");
   const newBtn = oldBtn.cloneNode(true);
   oldBtn.parentNode.replaceChild(newBtn, oldBtn);
 
   newBtn.addEventListener("click", () => {
     closeDeleteModal();
-
-    // play fade-out animation on the card before removing it
+    // play fade-out animation on the card
     const card = document.querySelector(`[data-post-id="${post_id}"]`);
     if (card) {
       card.classList.add("deleting");
@@ -571,8 +611,7 @@ function deletePost(post_id) {
         renderPosts();
       }, 240);
     }
-
-    // broadcast the deletion to all other connected clients via server
+    // broadcast deletion to all clients
     socket.emit("delete_post", { post_id });
   });
 }
@@ -581,25 +620,7 @@ function closeDeleteModal() {
   document.getElementById("delete-modal").classList.add("hidden");
 }
 
-// ── Subscribe / unsubscribe ───────────────────────────────────────────────────
-function handleTopicClick(topic) {
-  if (mySubscriptions.has(topic)) return;
-  pendingSubTopic = topic;
-  const c = getColor(topic);
-  document.getElementById("sub-confirm-text").innerHTML =
-    `Subscribe to <strong style="color:${c};">#${getLabel(topic)}</strong>?`;
-  const bar = document.getElementById("sub-confirm");
-  bar.classList.remove("hidden");
-  setTimeout(() => bar.classList.add("hidden"), 6000);
-}
-function confirmSubscribe() {
-  if (pendingSubTopic) { socket.emit("subscribe", { topic: pendingSubTopic }); hideSubConfirm(); }
-}
-function hideSubConfirm() {
-  document.getElementById("sub-confirm").classList.add("hidden");
-  pendingSubTopic = null;
-}
-function unsubscribe(topic) { socket.emit("unsubscribe", { topic }); }
+// ── Filter ────────────────────────────────────────────────────────────────────
 function setFilter(f, btn) {
   currentFilter = f;
   document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
@@ -637,7 +658,7 @@ function submitPost() {
   const topic   = document.getElementById("post-topic-select").value;
   const message = document.getElementById("post-message").value.trim();
   if (!message) return;
-  // generate a unique id so this post can be identified for deletion
+  // generate unique id so this post can be deleted later
   const post_id = Date.now() + "_" + Math.random().toString(36).slice(2);
   socket.emit("post", { topic, message, post_id });
   closePostModal();
@@ -663,23 +684,26 @@ function showNotifBubble(data) {
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 document.addEventListener("keydown", e => {
-  // Escape closes any open modal or confirm bar
   if (e.key === "Escape") {
     closePostModal();
     closeUsernameModal();
+    closeSubModal();
     closeDeleteModal();
-    hideSubConfirm();
   }
-  // Ctrl/Cmd + Enter submits the active modal
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
     if (!document.getElementById("post-modal").classList.contains("hidden"))     submitPost();
     if (!document.getElementById("username-modal").classList.contains("hidden")) saveUsername();
   }
 });
-// clicking the dark overlay behind a modal closes it
+// clicking outside a modal closes it
 document.querySelectorAll(".modal-overlay").forEach(o =>
   o.addEventListener("click", e => {
-    if (e.target === o) { closePostModal(); closeUsernameModal(); closeDeleteModal(); }
+    if (e.target === o) {
+      closePostModal();
+      closeUsernameModal();
+      closeSubModal();
+      closeDeleteModal();
+    }
   })
 );
 
