@@ -7,9 +7,8 @@ from flask import Flask, send_from_directory
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask import request as sio_request
 
-# ─────────────────────────────────────────────────────────────────────────────
 # RAW TCP SERVER (original — keeps client.py working)
-# ─────────────────────────────────────────────────────────────────────────────
+
 
 # 0.0.0.0 means accept connections from any machine on the network
 HOST = "0.0.0.0"
