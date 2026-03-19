@@ -1,7 +1,7 @@
 import socket
 import threading
 from topics import TOPICS
-
+# this is client.py
 HOST = "127.0.0.1"
 PORT = 5000
 
@@ -25,8 +25,6 @@ def show_topics():
     print("\nAvailable topics:")
     for i, topic in enumerate(TOPICS, 1):
         print(f"  {i}. {topic}")
-
-        
 
 
 def main():
@@ -53,7 +51,6 @@ def main():
     print("  unsub → unsubscribe from a topic")
     print("  post  → post a message to a topic")
     print("  quit  → disconnect\n")
-    print("  unsub → unsubscribe from a topic")
 
     while True:
         try:
@@ -74,7 +71,10 @@ def main():
             elif command == "unsub":
                 show_topics()
                 topic = input("Enter topic name to unsubscribe: ").strip()
-                sock.send(f"UNSUBSCRIBE|{topic}".encode())
+                if topic in TOPICS:
+                    sock.send(f"UNSUBSCRIBE|{topic}".encode())
+                else:
+                    print(f"Unknown topic '{topic}'.")
 
             elif command == "post":
                 show_topics()
@@ -88,14 +88,6 @@ def main():
                     sock.send(f"POST|{topic}|{message}".encode())
                 else:
                     print("Empty message not sent.")
-
-            elif command == "unsub":
-                show_topics()
-                topic = input("Enter topic name to unsubscribe: ").strip()
-                if topic in TOPICS:
-                    sock.send(f"UNSUBSCRIBE|{topic}".encode())
-                else:
-                    print(f"Unknown topic '{topic}'.")
 
             else:
                 print("Unknown command. Use: sub, unsub, post, quit")
