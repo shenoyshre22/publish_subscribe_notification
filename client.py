@@ -45,7 +45,7 @@ def main():
     # start background thread to receive incoming broadcast messages
     thread = threading.Thread(target=receive_messages, args=(sock,), daemon=True)
     thread.start()
-
+     #added 6 socket event handlers 
     print("\nCommands:")
     print("  sub   → subscribe to a topic")
     print("  unsub → unsubscribe from a topic")
