@@ -1,5 +1,4 @@
 // app.js — NetThreads frontend logic
-// connects to Flask-SocketIO server, handles all UI interactions
 
 // ── Topic config (mirrors topics.py) ──────────────────────────────────────────
 const TOPICS = [
@@ -25,9 +24,9 @@ const getLabel = t => TOPIC_LABELS[t] || t;
 let myUsername      = "Anonymous";
 let mySubscriptions = new Set();
 let allPosts        = [];
-let allComments     = {};   // { post_id: [ {username, message, ts}, ... ] }
-let postVotes       = {};   // { post_id: { up: N, down: N, mine: "up"|"down"|null } }
-let commentVotes    = {};   // { comment_id: { up: N, down: N, mine: "up"|"down"|null } }
+let allComments     = {};
+let postVotes       = {};
+let commentVotes    = {};
 let pendingSubTopic = null;
 let postCount       = 0;
 let currentFilter   = "all";
@@ -38,39 +37,35 @@ const socket = io();
 socket.on("connect", () => {
   document.getElementById("conn-dot").classList.add("connected");
   socket.emit("set_username", { username: myUsername });
-  socket.emit("get_subscriptions");
-  // note: no need to request posts — server sends them automatically via "load_posts"
+  // note: subscriptions are restored by the server inside on_set_username
+  // when the username is sent — no need to call get_subscriptions separately
 });
 
 socket.on("disconnect", () => {
   document.getElementById("conn-dot").classList.remove("connected");
 });
 
-// ── load_posts: fired ONCE on connect with full post history from SQLite ───────
-// this is the key event that makes content survive page refreshes
-// server calls db_get_all_posts() and emits the results here on every connect
+// ── load_posts: full post history from SQLite sent on every connect ────────────
+// this is what makes posts survive page refreshes
+// all posts are shown regardless of subscription state so nothing looks empty
 socket.on("load_posts", (data) => {
-  // replace local array with the full history from the server
   allPosts = data.posts.map(p => ({
     ...p,
-    // ts comes from server in milliseconds — same format as Date.now()
     fromMe: p.username === myUsername,
   }));
 
-  // db returns posts oldest-first; reverse so newest appears at top of feed
+  // reverse so newest appears at top (db returns oldest first)
   allPosts.reverse();
 
-  // update the posts received counter
   postCount = allPosts.length;
   document.getElementById("stat-posts").textContent = postCount;
 
   renderPosts();
 });
 
-// ── new_post: fired in real time when anyone posts ────────────────────────────
+// ── new_post: real-time incoming post ─────────────────────────────────────────
 socket.on("new_post", (data) => {
-  // deduplication: avoid adding same post twice if load_posts and new_post
-  // both fire for the same post on a reconnect
+  // deduplication: skip if already loaded via load_posts
   if (data.post_id && allPosts.some(p => p.post_id === data.post_id)) return;
 
   allPosts.unshift({ ...data, fromMe: data.username === myUsername });
@@ -86,16 +81,21 @@ socket.on("post_deleted", (data) => {
   renderPosts();
 });
 
-socket.on("subscribed", (d) => { mySubscriptions.add(d.topic); syncUI(); });
+// ── my_subscriptions: sent by server after set_username to restore saved subs ──
+// this fires when the server finds saved subscriptions for this username in SQLite
+socket.on("my_subscriptions", (d) => {
+  d.topics.forEach(t => mySubscriptions.add(t));
+  syncUI();
+  // re-render so the filter can apply correctly now that subs are loaded
+  renderPosts();
+});
+
+socket.on("subscribed",   (d) => { mySubscriptions.add(d.topic);    syncUI(); renderPosts(); });
 socket.on("unsubscribed", (d) => {
   mySubscriptions.delete(d.topic);
-  allPosts = allPosts.filter(p => {
-    if (p.topic === d.topic) { delete allComments[p.post_id]; return false; }
-    return true;
-  });
-  syncUI(); renderPosts();
+  syncUI();
+  renderPosts();
 });
-socket.on("my_subscriptions", (d) => { d.topics.forEach(t => mySubscriptions.add(t)); syncUI(); });
 
 // ── Comment socket handlers ───────────────────────────────────────────────────
 socket.on("new_comment", (data) => {
@@ -170,16 +170,20 @@ function renderPosts() {
   const container = document.getElementById("posts-container");
   const empty     = document.getElementById("empty-feed");
 
-  // apply current filter
   let filtered = allPosts;
+
   if (currentFilter === "mine") {
+    // "Posted by me" — show only this user's posts
     filtered = allPosts.filter(p => p.username === myUsername);
   } else {
-    // "all subscribed" — only show posts from subscribed topics
+    // "All subscribed" filter logic:
+    // if the user has subscriptions, only show posts from those topics
+    // if the user has NO subscriptions yet (e.g. on first load before subs restore),
+    // show ALL posts so the feed doesn't look falsely empty
     if (mySubscriptions.size > 0) {
       filtered = allPosts.filter(p => mySubscriptions.has(p.topic));
     } else {
-      filtered = [];
+      filtered = allPosts;   // show everything when no subs loaded yet
     }
   }
 
@@ -283,13 +287,9 @@ function castVote(target_type, target_id, direction) {
   const store = target_type === "post" ? postVotes : commentVotes;
   if (!store[target_id]) store[target_id] = { up: 0, down: 0, mine: null };
   const v = store[target_id];
-
-  // toggling: clicking the same direction twice removes the vote
   const newDir = v.mine === direction ? null : direction;
   v.mine = newDir;
-
   socket.emit("cast_vote", { target_type, target_id, direction: newDir });
-
   const prefix = target_type === "post" ? "pvote" : "cvote";
   updateVoteUI(`${prefix}-${target_id}`, v.up, v.down, newDir);
 }
@@ -297,11 +297,11 @@ function castVote(target_type, target_id, direction) {
 function updateVoteUI(containerId, up, down, mine) {
   const container = document.getElementById(containerId);
   if (!container) return;
-  const upBtn    = container.querySelector(".upvote");
-  const downBtn  = container.querySelector(".downvote");
-  const scoreEl  = container.querySelector(".vote-score, .comment-vote-score");
-  const upCount  = container.querySelector(".upvote span");
-  const downCount= container.querySelector(".downvote span");
+  const upBtn     = container.querySelector(".upvote");
+  const downBtn   = container.querySelector(".downvote");
+  const scoreEl   = container.querySelector(".vote-score, .comment-vote-score");
+  const upCount   = container.querySelector(".upvote span");
+  const downCount = container.querySelector(".downvote span");
 
   if (upCount)    upCount.textContent   = up;
   if (downCount)  downCount.textContent = down;
@@ -426,6 +426,7 @@ function saveUsername() {
   if (!v) return;
   myUsername = v;
   document.getElementById("username-display").textContent = "@" + v;
+  // sending set_username also triggers the server to restore saved subscriptions
   socket.emit("set_username", { username: v });
   closeUsernameModal();
 }
@@ -444,7 +445,6 @@ function submitPost() {
   const topic   = document.getElementById("post-topic-select").value;
   const message = document.getElementById("post-message").value.trim();
   if (!message) return;
-  // unique id generated client-side — used for deletion and deduplication
   const post_id = Date.now() + "_" + Math.random().toString(36).slice(2);
   socket.emit("post", { topic, message, post_id });
   closePostModal();
@@ -489,7 +489,9 @@ document.querySelectorAll(".modal-overlay").forEach(o =>
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderTopicStrip();
 renderSidebar();
+// prompt for username on first visit
 setTimeout(() => { if (myUsername === "Anonymous") openUsernameModal(); }, 800);
+// refresh timestamps every 30 seconds
 setInterval(() => {
   document.querySelectorAll(".post-time").forEach((el, i) => {
     if (allPosts[i]) el.textContent = timeAgo(allPosts[i].ts);
