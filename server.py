@@ -1,4 +1,5 @@
 import time
+import uuid
 import socket                 # provides networking functionality
 import threading              # allows multiple clients to connect simultaneously
 from topics import TOPICS     # import the list of allowed topics
@@ -24,8 +25,12 @@ tcp_subscriptions = {topic: [] for topic in TOPICS}
 # NEW: store usernames of clients
 tcp_usernames = {}
 
-# comments store: { post_id: [ {username, message, ts}, ... ] }
+# comments store: { post_id: [ {comment_id, username, message, ts}, ... ] }
 comments = {}
+
+# votes store: { target_id: { "up": set(sids), "down": set(sids) } }
+# target_id is either a post_id or a comment_id
+votes = {}
 
 
 def tcp_broadcast(topic, message):
@@ -315,8 +320,11 @@ def on_delete_post(data):
     post_id  = data.get("post_id")
     username = web_usernames.get(sid, "Anonymous")
 
-    # clean up stored comments for this post
-    comments.pop(post_id, None)
+    # clean up stored comments and votes for this post
+    post_comments = comments.pop(post_id, [])
+    votes.pop(post_id, None)
+    for cm in post_comments:
+        votes.pop(cm.get("comment_id"), None)
 
     # broadcast the deletion to ALL clients so everyone removes it from their feed
     socketio.emit("post_deleted", {
@@ -335,10 +343,11 @@ def on_post_comment(data):
     if not post_id or not message:
         return
 
-    username = web_usernames.get(sid, "Anonymous")
-    ts       = int(time.time() * 1000)  # ms timestamp, matches JS Date.now()
+    username   = web_usernames.get(sid, "Anonymous")
+    ts         = int(time.time() * 1000)  # ms timestamp, matches JS Date.now()
+    comment_id = str(uuid.uuid4())
 
-    comment = {"username": username, "message": message, "ts": ts}
+    comment = {"comment_id": comment_id, "username": username, "message": message, "ts": ts}
 
     # store in memory
     if post_id not in comments:
@@ -347,10 +356,11 @@ def on_post_comment(data):
 
     # broadcast to ALL connected clients so every open feed sees it live
     socketio.emit("new_comment", {
-        "post_id":  post_id,
-        "username": username,
-        "message":  message,
-        "ts":       ts,
+        "post_id":    post_id,
+        "comment_id": comment_id,
+        "username":   username,
+        "message":    message,
+        "ts":         ts,
     })
 
 @socketio.on("get_comments")
@@ -360,6 +370,43 @@ def on_get_comments(data):
     emit("comments_list", {
         "post_id":  post_id,
         "comments": comments.get(post_id, []),
+    })
+
+# ── Vote handlers ─────────────────────────────────────────────────────────────
+
+@socketio.on("cast_vote")
+def on_cast_vote(data):
+    sid         = sio_request.sid
+    target_type = data.get("target_type")   # "post" or "comment"
+    target_id   = data.get("target_id")
+    direction   = data.get("direction")     # "up", "down", or None (toggle off)
+
+    if not target_id or target_type not in ("post", "comment"):
+        return
+
+    # initialise vote bucket
+    if target_id not in votes:
+        votes[target_id] = {"up": set(), "down": set()}
+
+    bucket = votes[target_id]
+
+    # remove previous vote by this sid
+    bucket["up"].discard(sid)
+    bucket["down"].discard(sid)
+
+    # apply new vote (None means removing vote)
+    if direction in ("up", "down"):
+        bucket[direction].add(sid)
+
+    up   = len(bucket["up"])
+    down = len(bucket["down"])
+
+    # broadcast updated counts to all clients
+    socketio.emit("vote_updated", {
+        "target_type": target_type,
+        "target_id":   target_id,
+        "up":          up,
+        "down":        down,
     })
 
 # ── Subscriptions restore ─────────────────────────────────────────────────────
