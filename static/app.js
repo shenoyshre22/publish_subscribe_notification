@@ -36,9 +36,19 @@ const socket = io();
 
 socket.on("connect", () => {
   document.getElementById("conn-dot").classList.add("connected");
-  socket.emit("set_username", { username: myUsername });
-  // note: subscriptions are restored by the server inside on_set_username
-  // when the username is sent — no need to call get_subscriptions separately
+
+  // check localStorage for a saved username from a previous visit
+  const savedUsername = localStorage.getItem("netthreads_username");
+
+  if (savedUsername) {
+    // returning user — restore silently, no modal
+    myUsername = savedUsername;
+    document.getElementById("username-display").textContent = "@" + savedUsername;
+    socket.emit("set_username", { username: savedUsername });
+  } else {
+    // first ever visit — send Anonymous for now, modal will prompt shortly
+    socket.emit("set_username", { username: "Anonymous" });
+  }
 });
 
 socket.on("disconnect", () => {
@@ -492,15 +502,8 @@ document.querySelectorAll(".modal-overlay").forEach(o =>
 renderTopicStrip();
 renderSidebar();
 
-// restore username from localStorage if it was saved previously
-const savedUsername = localStorage.getItem("netthreads_username");
-if (savedUsername) {
-  // user has visited before — restore their username silently, no modal needed
-  myUsername = savedUsername;
-  document.getElementById("username-display").textContent = "@" + savedUsername;
-  socket.emit("set_username", { username: savedUsername });
-} else {
-  // first visit — prompt for username after a short delay
+// only show the username modal if no saved username exists
+if (!localStorage.getItem("netthreads_username")) {
   setTimeout(() => openUsernameModal(), 800);
 }
 // refresh timestamps every 30 seconds
