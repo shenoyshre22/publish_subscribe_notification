@@ -106,18 +106,20 @@
 
     /* ── FEED ── */
     .feed-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-    .topic-strip-wrap { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 20px; }
-    .topic-strip-label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+    .topic-strip-wrap { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 20px; }
+    .topic-strip-label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
     .topic-strip {
-      display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;
+      display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px;
       scrollbar-width: thin; scrollbar-color: var(--border) transparent;
     }
     .topic-strip::-webkit-scrollbar { height: 3px; }
     .topic-strip::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* ── TOPIC PILLS — bigger ── */
     .topic-pill {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 6px 14px; border-radius: 20px;
-      font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 20px; border-radius: 20px;
+      font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
       border: 1.5px solid transparent; transition: all .15s;
       background: var(--surface2); color: var(--text); flex-shrink: 0;
     }
@@ -377,23 +379,17 @@
 </div>
 
 <!-- SUBSCRIBE / UNSUBSCRIBE MODAL -->
-<!-- clicking any topic pill opens this — content changes based on subscription state -->
 <div class="modal-overlay hidden" id="sub-modal">
   <div class="modal" style="max-width: 400px; text-align: center;">
-    <!-- icon changes: 🔔 for subscribe, 🔕 for unsubscribe -->
     <div class="sub-modal-icon" id="sub-modal-icon">🔔</div>
-    <!-- coloured badge showing the topic name -->
     <div class="sub-modal-topic-badge" id="sub-modal-badge"></div>
-    <!-- heading changes based on state -->
     <h2 id="sub-modal-heading" style="margin-bottom: 10px;">Subscribe to this topic?</h2>
-    <!-- description changes based on state -->
     <div class="sub-modal-desc" id="sub-modal-desc">
       You'll receive all new posts from this topic in your feed in real time.
       You can unsubscribe any time.
     </div>
     <div class="sub-modal-btns">
       <button class="btn btn-ghost" style="flex:1;" onclick="closeSubModal()">Cancel</button>
-      <!-- confirm button label + colour set by JS based on state -->
       <button class="btn btn-primary" style="flex:1;" id="sub-modal-confirm-btn">Subscribe</button>
     </div>
   </div>
@@ -422,10 +418,10 @@ const TOPICS = [
   "stocks","technology","memes","science"
 ];
 const TOPIC_LABELS = {
-  sports:"Sports", gaming:"Gaming", technology:"Technology",
-  bollybuzz:"BollyBuzz", pesu_live:"PESU Live", music:"Music",
-  world_news:"World News", national_news:"National News", stocks:"Stocks",
-  hollywood:"Hollywood", memes:"Memes", science:"Science",
+  sports:"🏆 Sports", gaming:"🎮 Gaming", technology:"💻 Technology",
+  bollybuzz:"🎬 BollyBuzz", pesu_live:"🏫 PESU Live", music:"🎵 Music",
+  world_news:"🌍 World News", national_news:"🇮🇳 National News", stocks:"📈 Stocks",
+  hollywood:"🎥 Hollywood", memes:"😂 Memes", science:"🔬 Science",
 };
 const TOPIC_COLORS = {
   sports:"#e8414e", gaming:"#7c6ff7", technology:"#3a9fff",
@@ -457,7 +453,6 @@ socket.on("disconnect", () => {
   document.getElementById("conn-dot").classList.remove("connected");
 });
 
-// a new post arrived for a subscribed topic
 socket.on("new_post", (data) => {
   allPosts.unshift({ ...data, ts: Date.now(), fromMe: data.username === myUsername });
   postCount++;
@@ -466,7 +461,6 @@ socket.on("new_post", (data) => {
   showNotifBubble(data);
 });
 
-// another client deleted a post — remove it from our feed
 socket.on("post_deleted", (data) => {
   allPosts = allPosts.filter(p => p.post_id !== data.post_id);
   renderPosts();
@@ -488,7 +482,7 @@ function renderTopicStrip() {
     const sub = mySubscriptions.has(t);
     const c   = getColor(t);
     return `<button class="topic-pill ${sub ? "subscribed" : ""}" style="color:${c};" onclick="handleTopicClick('${t}')">
-      <span style="width:7px;height:7px;border-radius:50%;background:${c};display:inline-block;flex-shrink:0;"></span>
+      <span style="width:8px;height:8px;border-radius:50%;background:${c};display:inline-block;flex-shrink:0;"></span>
       ${getLabel(t)}
     </button>`;
   }).join("");
@@ -505,7 +499,6 @@ function renderSidebar() {
     return `<button class="side-topic-pill">
       <span class="topic-dot" style="background:${c};"></span>
       ${getLabel(t)}
-      <!-- × shown on hover to unsubscribe directly from sidebar -->
       <button class="unsub-x" onclick="event.stopPropagation();handleTopicClick('${t}')" title="Unsubscribe">×</button>
     </button>`;
   }).join("");
@@ -556,26 +549,21 @@ const timeAgo = ts => {
 };
 
 // ── Subscribe / Unsubscribe modal ─────────────────────────────────────────────
-// clicking any topic pill (subscribed or not) opens this modal
-// content adapts based on whether user is already subscribed
 function handleTopicClick(topic) {
   const c  = getColor(topic);
   const bg = c + "22";
 
-  // set the coloured topic badge
   const badge = document.getElementById("sub-modal-badge");
   badge.textContent      = "#" + getLabel(topic);
   badge.style.color      = c;
   badge.style.background = bg;
   badge.style.border     = `1.5px solid ${c}`;
 
-  // clone confirm button to remove any stale event listeners
   const oldBtn = document.getElementById("sub-modal-confirm-btn");
   const newBtn = oldBtn.cloneNode(true);
   oldBtn.parentNode.replaceChild(newBtn, oldBtn);
 
   if (mySubscriptions.has(topic)) {
-    // ── already subscribed → show UNSUBSCRIBE version ──
     document.getElementById("sub-modal-icon").textContent    = "🔕";
     document.getElementById("sub-modal-heading").textContent = "Unsubscribe from this topic?";
     document.getElementById("sub-modal-desc").textContent    =
@@ -583,13 +571,12 @@ function handleTopicClick(topic) {
     newBtn.textContent      = "Unsubscribe";
     newBtn.className        = "btn btn-danger";
     newBtn.style.flex       = "1";
-    newBtn.style.background = "";   // let btn-danger handle the colour
+    newBtn.style.background = "";
     newBtn.addEventListener("click", () => {
       socket.emit("unsubscribe", { topic });
       closeSubModal();
     });
   } else {
-    // ── not subscribed → show SUBSCRIBE version ──
     document.getElementById("sub-modal-icon").textContent    = "🔔";
     document.getElementById("sub-modal-heading").textContent = "Subscribe to this topic?";
     document.getElementById("sub-modal-desc").textContent    =
@@ -597,7 +584,7 @@ function handleTopicClick(topic) {
     newBtn.textContent      = "Subscribe";
     newBtn.className        = "btn btn-primary";
     newBtn.style.flex       = "1";
-    newBtn.style.background = c;   // button colour matches topic colour
+    newBtn.style.background = c;
     newBtn.addEventListener("click", () => {
       socket.emit("subscribe", { topic });
       closeSubModal();
@@ -617,14 +604,12 @@ function closeSubModal() {
 function deletePost(post_id) {
   document.getElementById("delete-modal").classList.remove("hidden");
 
-  // clone to remove stale listener
   const oldBtn = document.getElementById("confirm-delete-btn");
   const newBtn = oldBtn.cloneNode(true);
   oldBtn.parentNode.replaceChild(newBtn, oldBtn);
 
   newBtn.addEventListener("click", () => {
     closeDeleteModal();
-    // play fade-out animation on the card
     const card = document.querySelector(`[data-post-id="${post_id}"]`);
     if (card) {
       card.classList.add("deleting");
@@ -633,7 +618,6 @@ function deletePost(post_id) {
         renderPosts();
       }, 240);
     }
-    // broadcast deletion to all clients
     socket.emit("delete_post", { post_id });
   });
 }
@@ -680,7 +664,6 @@ function submitPost() {
   const topic   = document.getElementById("post-topic-select").value;
   const message = document.getElementById("post-message").value.trim();
   if (!message) return;
-  // generate unique id so this post can be deleted later
   const post_id = Date.now() + "_" + Math.random().toString(36).slice(2);
   socket.emit("post", { topic, message, post_id });
   closePostModal();
@@ -706,20 +689,17 @@ function showNotifBubble(data) {
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 document.addEventListener("keydown", e => {
-  // Escape closes any open modal
   if (e.key === "Escape") {
     closePostModal();
     closeUsernameModal();
     closeSubModal();
     closeDeleteModal();
   }
-  // Ctrl/Cmd + Enter submits the active modal
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
     if (!document.getElementById("post-modal").classList.contains("hidden"))     submitPost();
     if (!document.getElementById("username-modal").classList.contains("hidden")) saveUsername();
   }
 });
-// clicking outside a modal closes it
 document.querySelectorAll(".modal-overlay").forEach(o =>
   o.addEventListener("click", e => {
     if (e.target === o) {
@@ -734,9 +714,7 @@ document.querySelectorAll(".modal-overlay").forEach(o =>
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderTopicStrip();
 renderSidebar();
-// prompt for username on first visit
 setTimeout(() => { if (myUsername === "Anonymous") openUsernameModal(); }, 800);
-// refresh "X ago" timestamps every 30 seconds
 setInterval(() => {
   document.querySelectorAll(".post-time").forEach((el, i) => {
     if (allPosts[i]) el.textContent = timeAgo(allPosts[i].ts);
