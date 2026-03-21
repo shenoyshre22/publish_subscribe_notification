@@ -1,3 +1,6 @@
+// app.js — NetThreads frontend logic
+// connects to Flask-SocketIO server, handles all UI interactions
+
 // ── Topic config (mirrors topics.py) ──────────────────────────────────────────
 const TOPICS = [
   "sports","world_news","national_news","pesu_live",
@@ -36,14 +39,41 @@ socket.on("connect", () => {
   document.getElementById("conn-dot").classList.add("connected");
   socket.emit("set_username", { username: myUsername });
   socket.emit("get_subscriptions");
+  // note: no need to request posts — server sends them automatically via "load_posts"
 });
 
 socket.on("disconnect", () => {
   document.getElementById("conn-dot").classList.remove("connected");
 });
 
+// ── load_posts: fired ONCE on connect with full post history from SQLite ───────
+// this is the key event that makes content survive page refreshes
+// server calls db_get_all_posts() and emits the results here on every connect
+socket.on("load_posts", (data) => {
+  // replace local array with the full history from the server
+  allPosts = data.posts.map(p => ({
+    ...p,
+    // ts comes from server in milliseconds — same format as Date.now()
+    fromMe: p.username === myUsername,
+  }));
+
+  // db returns posts oldest-first; reverse so newest appears at top of feed
+  allPosts.reverse();
+
+  // update the posts received counter
+  postCount = allPosts.length;
+  document.getElementById("stat-posts").textContent = postCount;
+
+  renderPosts();
+});
+
+// ── new_post: fired in real time when anyone posts ────────────────────────────
 socket.on("new_post", (data) => {
-  allPosts.unshift({ ...data, ts: Date.now(), fromMe: data.username === myUsername });
+  // deduplication: avoid adding same post twice if load_posts and new_post
+  // both fire for the same post on a reconnect
+  if (data.post_id && allPosts.some(p => p.post_id === data.post_id)) return;
+
+  allPosts.unshift({ ...data, fromMe: data.username === myUsername });
   postCount++;
   document.getElementById("stat-posts").textContent = postCount;
   renderPosts();
@@ -139,7 +169,19 @@ function renderSidebar() {
 function renderPosts() {
   const container = document.getElementById("posts-container");
   const empty     = document.getElementById("empty-feed");
-  const filtered  = currentFilter === "mine" ? allPosts.filter(p => p.username === myUsername) : allPosts;
+
+  // apply current filter
+  let filtered = allPosts;
+  if (currentFilter === "mine") {
+    filtered = allPosts.filter(p => p.username === myUsername);
+  } else {
+    // "all subscribed" — only show posts from subscribed topics
+    if (mySubscriptions.size > 0) {
+      filtered = allPosts.filter(p => mySubscriptions.has(p.topic));
+    } else {
+      filtered = [];
+    }
+  }
 
   container.querySelectorAll(".post-card").forEach(el => el.remove());
   empty.style.display = filtered.length === 0 ? "block" : "none";
@@ -201,10 +243,11 @@ const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>
 const getInitials = n => n.split(/[\s_]/).map(w => w[0] || "").join("").toUpperCase().slice(0,2) || "AN";
 const timeAgo = ts => {
   const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 5)    return "just now";
-  if (s < 60)   return s + "s ago";
-  if (s < 3600) return Math.floor(s / 60) + "m ago";
-  return Math.floor(s / 3600) + "h ago";
+  if (s < 5)     return "just now";
+  if (s < 60)    return s + "s ago";
+  if (s < 3600)  return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  return Math.floor(s / 86400) + "d ago";
 };
 
 // ── Comment helpers ───────────────────────────────────────────────────────────
@@ -241,6 +284,7 @@ function castVote(target_type, target_id, direction) {
   if (!store[target_id]) store[target_id] = { up: 0, down: 0, mine: null };
   const v = store[target_id];
 
+  // toggling: clicking the same direction twice removes the vote
   const newDir = v.mine === direction ? null : direction;
   v.mine = newDir;
 
@@ -400,6 +444,7 @@ function submitPost() {
   const topic   = document.getElementById("post-topic-select").value;
   const message = document.getElementById("post-message").value.trim();
   if (!message) return;
+  // unique id generated client-side — used for deletion and deduplication
   const post_id = Date.now() + "_" + Math.random().toString(36).slice(2);
   socket.emit("post", { topic, message, post_id });
   closePostModal();
