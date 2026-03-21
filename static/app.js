@@ -428,6 +428,8 @@ function saveUsername() {
   document.getElementById("username-display").textContent = "@" + v;
   // sending set_username also triggers the server to restore saved subscriptions
   socket.emit("set_username", { username: v });
+  // save to localStorage so username persists across page refreshes
+  localStorage.setItem("netthreads_username", v);
   closeUsernameModal();
 }
 
@@ -489,8 +491,18 @@ document.querySelectorAll(".modal-overlay").forEach(o =>
 // ── Init ──────────────────────────────────────────────────────────────────────
 renderTopicStrip();
 renderSidebar();
-// prompt for username on first visit
-setTimeout(() => { if (myUsername === "Anonymous") openUsernameModal(); }, 800);
+
+// restore username from localStorage if it was saved previously
+const savedUsername = localStorage.getItem("netthreads_username");
+if (savedUsername) {
+  // user has visited before — restore their username silently, no modal needed
+  myUsername = savedUsername;
+  document.getElementById("username-display").textContent = "@" + savedUsername;
+  socket.emit("set_username", { username: savedUsername });
+} else {
+  // first visit — prompt for username after a short delay
+  setTimeout(() => openUsernameModal(), 800);
+}
 // refresh timestamps every 30 seconds
 setInterval(() => {
   document.querySelectorAll(".post-time").forEach((el, i) => {
