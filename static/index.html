@@ -185,6 +185,68 @@
     .post-delete-btn:hover { color: var(--accent); background: rgba(232,65,78,0.1); }
     .post-body { font-size: 14px; line-height: 1.6; padding-left: 38px; }
 
+    /* ── COMMENT SECTION ── */
+    .post-footer {
+      display: flex; align-items: center; gap: 14px;
+      padding-left: 38px; margin-top: 12px;
+    }
+    .comment-toggle-btn {
+      background: none; border: none; cursor: pointer;
+      color: var(--muted); font-size: 12px; font-weight: 600;
+      display: flex; align-items: center; gap: 5px;
+      padding: 4px 0; transition: color .15s;
+    }
+    .comment-toggle-btn:hover { color: var(--text); }
+    .comment-count-badge {
+      background: var(--surface2); border-radius: 20px;
+      padding: 1px 7px; font-size: 11px; color: var(--muted);
+    }
+    .comment-section {
+      margin-top: 12px; padding-top: 12px;
+      border-top: 1px solid var(--border);
+      display: none; flex-direction: column; gap: 10px;
+    }
+    .comment-section.open { display: flex; }
+    .comment-list { display: flex; flex-direction: column; gap: 8px; }
+    .comment-item {
+      display: flex; gap: 8px; align-items: flex-start;
+      animation: slideIn .2s ease;
+    }
+    .comment-avatar {
+      width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700;
+    }
+    .comment-bubble {
+      background: var(--surface2); border-radius: 8px;
+      padding: 7px 11px; flex: 1;
+    }
+    .comment-meta {
+      display: flex; align-items: baseline; gap: 6px; margin-bottom: 2px;
+    }
+    .comment-username { font-size: 12px; font-weight: 600; }
+    .comment-time     { font-size: 10px; color: var(--muted); }
+    .comment-text     { font-size: 13px; line-height: 1.5; }
+    .comment-input-row {
+      display: flex; gap: 8px; align-items: center; margin-top: 4px;
+    }
+    .comment-input {
+      flex: 1; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 20px; color: var(--text);
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px; padding: 7px 14px;
+      outline: none; transition: border-color .15s;
+    }
+    .comment-input:focus { border-color: var(--accent); }
+    .comment-send-btn {
+      background: var(--accent); border: none; border-radius: 50%;
+      width: 30px; height: 30px; cursor: pointer; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, transform .15s; color: #fff; font-size: 14px;
+    }
+    .comment-send-btn:hover { background: var(--accent2); transform: scale(1.08); }
+    .no-comments { font-size: 12px; color: var(--muted); text-align: center; padding: 8px 0; }
+
     .empty-feed { text-align: center; padding: 80px 20px; color: var(--muted); }
     .empty-feed .big { font-size: 48px; margin-bottom: 12px; }
     .empty-feed h3 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
@@ -436,6 +498,7 @@ const getLabel = t => TOPIC_LABELS[t] || t;
 let myUsername      = "Anonymous";
 let mySubscriptions = new Set();
 let allPosts        = [];
+let allComments     = {};   // { post_id: [ {username, message, ts}, ... ] }
 let pendingSubTopic = null;
 let postCount       = 0;
 let currentFilter   = "all";
@@ -463,12 +526,42 @@ socket.on("new_post", (data) => {
 
 socket.on("post_deleted", (data) => {
   allPosts = allPosts.filter(p => p.post_id !== data.post_id);
+  delete allComments[data.post_id];
   renderPosts();
 });
 
 socket.on("subscribed",       (d) => { mySubscriptions.add(d.topic);    syncUI(); });
-socket.on("unsubscribed",     (d) => { mySubscriptions.delete(d.topic); allPosts = allPosts.filter(p => p.topic !== d.topic); syncUI(); renderPosts(); });
+socket.on("unsubscribed",     (d) => {
+  mySubscriptions.delete(d.topic);
+  allPosts = allPosts.filter(p => {
+    if (p.topic === d.topic) { delete allComments[p.post_id]; return false; }
+    return true;
+  });
+  syncUI(); renderPosts();
+});
 socket.on("my_subscriptions", (d) => { d.topics.forEach(t => mySubscriptions.add(t)); syncUI(); });
+
+// ── Comment socket handlers ───────────────────────────────────────────────────
+socket.on("new_comment", (data) => {
+  const { post_id, username, message, ts } = data;
+  if (!allComments[post_id]) allComments[post_id] = [];
+  allComments[post_id].push({ username, message, ts });
+
+  // update count badge
+  const badge = document.getElementById(`ccount-${post_id}`);
+  if (badge) badge.textContent = allComments[post_id].length;
+
+  // if section is open, append the comment live
+  const list = document.getElementById(`clist-${post_id}`);
+  if (list) {
+    const post  = allPosts.find(p => p.post_id === post_id);
+    const color = post ? getColor(post.topic) : "#888";
+    // remove "no comments" placeholder if present
+    const placeholder = list.querySelector(".no-comments");
+    if (placeholder) placeholder.remove();
+    list.insertAdjacentHTML("beforeend", renderCommentHTML({ username, message, ts }, color));
+  }
+});
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function syncUI() {
@@ -519,6 +612,7 @@ function renderPosts() {
     card.className        = "post-card";
     card.dataset.postId   = p.post_id;
     card.style.borderLeft = `3px solid ${c}`;
+    const postComments = allComments[p.post_id] || [];
     card.innerHTML = `
       <div class="post-header">
         <div class="post-avatar" style="background:${bg};color:${c};">${getInitials(p.username)}</div>
@@ -532,6 +626,24 @@ function renderPosts() {
         ` : ""}
       </div>
       <div class="post-body">${esc(p.message)}</div>
+      <div class="post-footer">
+        <button class="comment-toggle-btn" onclick="toggleComments('${p.post_id}')">
+          💬 Comments <span class="comment-count-badge" id="ccount-${p.post_id}">${postComments.length}</span>
+        </button>
+      </div>
+      <div class="comment-section" id="csec-${p.post_id}">
+        <div class="comment-list" id="clist-${p.post_id}">
+          ${postComments.length === 0
+            ? `<div class="no-comments">No comments yet. Be the first!</div>`
+            : postComments.map(cm => renderCommentHTML(cm, c)).join("")}
+        </div>
+        <div class="comment-input-row">
+          <input class="comment-input" id="cinput-${p.post_id}"
+            placeholder="Write a comment…" maxlength="300"
+            onkeydown="if(event.key==='Enter')submitComment('${p.post_id}')"/>
+          <button class="comment-send-btn" onclick="submitComment('${p.post_id}')">➤</button>
+        </div>
+      </div>
     `;
     container.appendChild(card);
   });
@@ -548,7 +660,45 @@ const timeAgo = ts => {
   return Math.floor(s / 3600) + "h ago";
 };
 
-// ── Subscribe / Unsubscribe modal ─────────────────────────────────────────────
+// ── Comment helpers ───────────────────────────────────────────────────────────
+function renderCommentHTML(cm, topicColor) {
+  const bg = (topicColor || "#888") + "33";
+  return `
+    <div class="comment-item">
+      <div class="comment-avatar" style="background:${bg};color:${topicColor};">
+        ${getInitials(cm.username)}
+      </div>
+      <div class="comment-bubble">
+        <div class="comment-meta">
+          <span class="comment-username">${esc(cm.username)}</span>
+          <span class="comment-time">${timeAgo(cm.ts)}</span>
+        </div>
+        <div class="comment-text">${esc(cm.message)}</div>
+      </div>
+    </div>`;
+}
+
+function toggleComments(post_id) {
+  const sec = document.getElementById(`csec-${post_id}`);
+  if (!sec) return;
+  const isOpen = sec.classList.toggle("open");
+  if (isOpen) {
+    // focus the input when opened
+    const input = document.getElementById(`cinput-${post_id}`);
+    if (input) setTimeout(() => input.focus(), 50);
+  }
+}
+
+function submitComment(post_id) {
+  const input = document.getElementById(`cinput-${post_id}`);
+  if (!input) return;
+  const message = input.value.trim();
+  if (!message) return;
+  socket.emit("post_comment", { post_id, message });
+  input.value = "";
+}
+
+
 function handleTopicClick(topic) {
   const c  = getColor(topic);
   const bg = c + "22";
