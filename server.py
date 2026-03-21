@@ -1,3 +1,4 @@
+import time
 import socket                 # provides networking functionality
 import threading              # allows multiple clients to connect simultaneously
 from topics import TOPICS     # import the list of allowed topics
@@ -22,6 +23,9 @@ tcp_subscriptions = {topic: [] for topic in TOPICS}
 
 # NEW: store usernames of clients
 tcp_usernames = {}
+
+# comments store: { post_id: [ {username, message, ts}, ... ] }
+comments = {}
 
 
 def tcp_broadcast(topic, message):
@@ -276,7 +280,7 @@ def on_unsubscribe(data):
 
 @socketio.on("post")
 def on_post(data):
-    sid = sio_request.sid
+    sid     = sio_request.sid
     topic   = data.get("topic", "")
     message = data.get("message", "").strip()
 
@@ -290,9 +294,11 @@ def on_post(data):
         return
 
     username = web_usernames.get(sid, "Anonymous")
+    post_id  = data.get("post_id")
 
-    # include post_id in the broadcast so clients can use it to delete the post later
-    post_id = data.get("post_id")
+    # initialise an empty comment list for this post
+    if post_id:
+        comments[post_id] = []
 
     # broadcast to all browser clients subscribed to this topic
     payload = {"topic": topic, "username": username, "message": message, "post_id": post_id}
@@ -309,11 +315,54 @@ def on_delete_post(data):
     post_id  = data.get("post_id")
     username = web_usernames.get(sid, "Anonymous")
 
+    # clean up stored comments for this post
+    comments.pop(post_id, None)
+
     # broadcast the deletion to ALL clients so everyone removes it from their feed
     socketio.emit("post_deleted", {
         "post_id":  post_id,
         "username": username,
     })
+
+# ── Comment handlers ──────────────────────────────────────────────────────────
+
+@socketio.on("post_comment")
+def on_post_comment(data):
+    sid     = sio_request.sid
+    post_id = data.get("post_id")
+    message = data.get("message", "").strip()
+
+    if not post_id or not message:
+        return
+
+    username = web_usernames.get(sid, "Anonymous")
+    ts       = int(time.time() * 1000)  # ms timestamp, matches JS Date.now()
+
+    comment = {"username": username, "message": message, "ts": ts}
+
+    # store in memory
+    if post_id not in comments:
+        comments[post_id] = []
+    comments[post_id].append(comment)
+
+    # broadcast to ALL connected clients so every open feed sees it live
+    socketio.emit("new_comment", {
+        "post_id":  post_id,
+        "username": username,
+        "message":  message,
+        "ts":       ts,
+    })
+
+@socketio.on("get_comments")
+def on_get_comments(data):
+    # called if a client wants to fetch existing comments for a post
+    post_id = data.get("post_id")
+    emit("comments_list", {
+        "post_id":  post_id,
+        "comments": comments.get(post_id, []),
+    })
+
+# ── Subscriptions restore ─────────────────────────────────────────────────────
 
 @socketio.on("get_subscriptions")
 def on_get_subscriptions():
