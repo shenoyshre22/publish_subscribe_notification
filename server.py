@@ -344,26 +344,22 @@ def on_disconnect():
 
 @socketio.on("set_username")
 def on_set_username(data):
-    """
-    called when user sets their username
-    also restores their saved subscriptions from the database
-    so when a user logs in with the same name, all their topics come back
-    """
-    sid      = sio_request.sid
+    sid = sio_request.sid
     username = data.get("username", "").strip() or "Anonymous"
     web_usernames[sid] = username
     emit("server_msg", {"text": f"Username set to {username}"})
 
-    # restore saved subscriptions for this username from the database
     saved_topics = db_get_subscriptions(username)
     for topic in saved_topics:
         if topic in TOPICS:
             web_subscriptions[topic].add(sid)
             join_room(topic)
 
-    # tell the client which topics to restore in the UI
     if saved_topics:
         emit("my_subscriptions", {"topics": saved_topics})
+        # KEY FIX: send history for restored topics so feed populates on refresh
+        history = db_get_posts_by_topics(saved_topics)
+        emit("load_posts", {"posts": history})
 
 @socketio.on("subscribe")
 def on_subscribe(data):
