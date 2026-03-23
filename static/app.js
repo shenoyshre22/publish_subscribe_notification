@@ -183,18 +183,12 @@ function renderPosts() {
   let filtered = allPosts;
 
   if (currentFilter === "mine") {
-    // "Posted by me" — show only this user's posts
+    // "Posted by me" — show only this user's posts regardless of subscriptions
     filtered = allPosts.filter(p => p.username === myUsername);
   } else {
-    // "All subscribed" filter logic:
-    // if the user has subscriptions, only show posts from those topics
-    // if the user has NO subscriptions yet (e.g. on first load before subs restore),
-    // show ALL posts so the feed doesn't look falsely empty
-    if (mySubscriptions.size > 0) {
-      filtered = allPosts.filter(p => mySubscriptions.has(p.topic));
-    } else {
-      filtered = allPosts;   // show everything when no subs loaded yet
-    }
+    // "All subscribed" — always filter by subscribed topics only
+    // empty feed is correct and expected when not subscribed to anything
+    filtered = allPosts.filter(p => mySubscriptions.has(p.topic));
   }
 
   container.querySelectorAll(".post-card").forEach(el => el.remove());
