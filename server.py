@@ -102,6 +102,21 @@ def db_get_all_posts():
     conn.close()
     return [dict(row) for row in rows]
 
+def db_get_posts_by_topics(topics):
+    """
+    fetches all posts for a list of topics, ordered oldest first
+    used to send history when a user subscribes or restores subscriptions
+    """
+    if not topics:
+        return []
+    conn = get_db()
+    placeholders = ",".join("?" for _ in topics)
+    rows = conn.execute(
+        f"SELECT post_id, topic, username, message, ts FROM posts WHERE topic IN ({placeholders}) ORDER BY ts ASC",
+        topics
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
 # ── Subscription DB helpers ───────────────────────────────────────────────────
 
