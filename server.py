@@ -363,10 +363,6 @@ def on_set_username(data):
 
 @socketio.on("subscribe")
 def on_subscribe(data):
-    """
-    adds client to topic's SocketIO room and saves to database
-    SocketIO rooms efficiently route broadcasts to only relevant subscribers
-    """
     sid   = sio_request.sid
     topic = data.get("topic", "")
 
@@ -377,13 +373,16 @@ def on_subscribe(data):
     web_subscriptions[topic].add(sid)
     join_room(topic)
 
-    # save to database so subscription survives page refresh
     username = web_usernames.get(sid, "Anonymous")
     db_save_subscription(username, topic)
 
     emit("subscribed", {"topic": topic})
     emit("server_msg", {"text": f"Subscribed to #{topic}"})
-
+    # KEY FIX: send existing posts for this topic so history appears immediately
+    history = db_get_posts_by_topics([topic])
+    if history:
+        emit("load_posts", {"posts": history})
+        
 @socketio.on("unsubscribe")
 def on_unsubscribe(data):
     """
