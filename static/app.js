@@ -58,17 +58,20 @@ socket.on("disconnect", () => {
   document.getElementById("conn-dot").classList.remove("connected");
 });
 
-// ── load_posts: full post history from SQLite sent on every connect ────────────
+// ── load_posts: full post history from SQLite sent on every connect 
 // this is what makes posts survive page refreshes
 // all posts are shown regardless of subscription state so nothing looks empty
-socket.on("load_posts", (data) => {
-  allPosts = data.posts.map(p => ({
-    ...p,
-    fromMe: p.username === myUsername,
-  }));
 
-  // reverse so newest appears at top (db returns oldest first)
-  allPosts.reverse();
+socket.on("load_posts", (data) => {
+  // MERGE incoming posts with existing ones — deduplication by post_id
+  // This is needed because load_posts is now called once per subscribed topic
+  const existingIds = new Set(allPosts.map(p => p.post_id));
+  const newPosts = data.posts
+    .filter(p => !existingIds.has(p.post_id))
+    .map(p => ({ ...p, fromMe: p.username === myUsername }));
+
+  // merge then re-sort newest first
+  allPosts = [...allPosts, ...newPosts].sort((a, b) => b.ts - a.ts);
 
   postCount = allPosts.length;
   document.getElementById("stat-posts").textContent = postCount;
