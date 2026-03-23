@@ -324,16 +324,11 @@ def index():
 
 @socketio.on("connect")
 def on_connect():
-    """
-    fires when a browser tab connects
-    sends full post history AND saved subscriptions so everything restores on refresh
-    """
     web_usernames[sio_request.sid] = "Anonymous"
     emit("server_msg", {"text": "Connected to NetThreads!"})
-
-    # send full post history — this is what makes posts survive page refreshes
-    all_posts = db_get_all_posts()
-    emit("load_posts", {"posts": all_posts})
+    #  we no longer send load_posts here.
+    # Posts are sent in on_set_username (with subscription filter) 
+    # and in on_subscribe (per-topic history). This prevents the empty-feed bug. unless the feed is actuallyy empty
 
 @socketio.on("disconnect")
 def on_disconnect():
@@ -382,7 +377,7 @@ def on_subscribe(data):
     history = db_get_posts_by_topics([topic])
     if history:
         emit("load_posts", {"posts": history})
-        
+
 @socketio.on("unsubscribe")
 def on_unsubscribe(data):
     """
