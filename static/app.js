@@ -3,19 +3,22 @@
 // ── Topic config (mirrors topics.py) ──────────────────────────────────────────
 const TOPICS = [
   "sports","world_news","national_news","pesu_live",
-  "music","gaming","hollywood","bollybuzz","stocks"
+  "music","gaming","hollywood","bollybuzz","stocks",
+  "technology","memes","science"
 ];
 const TOPIC_LABELS = {
   sports:"🏆 Sports", gaming:"🎮 Gaming",
   bollybuzz:"🎬 BollyBuzz", pesu_live:"🏫 PESU Live", music:"🎵 Music",
   world_news:"🌍 World News", national_news:"🇮🇳 National News", stocks:"📈 Stocks",
-  hollywood:"🎥 Hollywood",
+  hollywood:"🎥 Hollywood", technology:"💻 Technology",
+  memes:"😂 Memes", science:"🔬 Science",
 };
 const TOPIC_COLORS = {
   sports:"#e8414e", gaming:"#7c6ff7",
   bollybuzz:"#f7a034", pesu_live:"#2dca8c", music:"#e85de8",
   world_news:"#4ecde8", national_news:"#e8c541", stocks:"#5de87a",
-  hollywood:"#e85d9f",
+  hollywood:"#e85d9f", technology:"#4e9de8",
+  memes:"#f7d034", science:"#34d4f7",
 };
 const getColor = t => TOPIC_COLORS[t] || "#888";
 const getLabel = t => TOPIC_LABELS[t] || t;
